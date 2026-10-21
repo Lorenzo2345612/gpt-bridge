@@ -224,7 +224,8 @@ El runtime Go conserva huellas del historial para reutilizar conversaciones,
 en lugar de otra copia completa de cada historial. El caché local de respuestas
 está limitado a 128 entradas y 64 MiB. Un recolector cierra conversaciones sin
 peticiones activas tras 30 minutos, aunque no llegue otra petición. El número
-máximo de procesos de conversación sigue siendo configurable con `--max-sessions`.
+de procesos de conversación no tiene un máximo por defecto. Puedes fijarlo con
+`--max-sessions N`; `--max-sessions 0` significa sin límite.
 Cada proceso nativo de Codex conserva su propio consumo de memoria.
 
 ## Verificación de la migración a Go
@@ -293,7 +294,9 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
   No se promete compatibilidad con todas las funciones exclusivas de Claude.
 - Los MCP configurados localmente siguen en Claude. Los conectores alojados de
   claude.ai pueden quedar deshabilitados por Claude al cambiar de proveedor.
-- Hasta 32 conversaciones vivas por lanzador, configurable con `--max-sessions`;
+- Sin límite de conversaciones por defecto en el puente. `--max-sessions N` fija
+  un máximo por lanzador; `0` desactiva ese máximo. Los límites de la cuenta
+  de Codex y los recursos del equipo siguen aplicándose;
   las inactivas caducan a los 30
   minutos mediante el recolector periódico. Reiniciar no borra sesiones de Claude.
 

@@ -350,7 +350,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		}
 	}
 	b.reapLocked(time.Now().Add(-30 * time.Minute))
-	if len(b.sessions) >= b.maxSessions {
+	if b.maxSessions > 0 && len(b.sessions) >= b.maxSessions {
 		var oldest *conversation
 		for _, c := range b.sessions {
 			if c.mu.TryLock() {

@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.3.1"
+const bridgeVersion = "0.3.2"
 
 type options struct {
 	serve, check, models, version      bool
@@ -29,7 +29,7 @@ type options struct {
 }
 
 func parseOptions(args []string) (options, error) {
-	o := options{timeout: 300, maxSessions: 32, model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
+	o := options{timeout: 300, maxSessions: 0, model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -84,7 +84,7 @@ func parseOptions(args []string) (options, error) {
 			o.claudeArgs = append(o.claudeArgs, arg)
 		}
 	}
-	if o.timeout < 1 || o.maxSessions < 1 || o.port < 0 || o.port > 65535 {
+	if o.timeout < 1 || o.maxSessions < 0 || o.port < 0 || o.port > 65535 {
 		return o, bad("Invalid timeout, maximum session count or port")
 	}
 	if o.serve && o.tokenFile == "" {
