@@ -47,6 +47,7 @@ func currentHostContext(p *prepared) M {
 
 func (c *conversation) updateHost(p *prepared) {
 	c.names = p.Names
+	c.baseSystemHash = p.BaseSystemHash
 	c.allowed = map[string]bool{}
 	for _, name := range p.Names {
 		c.allowed[name] = true

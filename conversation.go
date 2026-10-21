@@ -18,6 +18,7 @@ type pendingTool struct {
 }
 type conversation struct {
 	mu                    sync.Mutex
+	closeOnce             sync.Once
 	rpc                   backend
 	key, threadID, effort string
 	hostIdentity          string
@@ -28,15 +29,28 @@ type conversation struct {
 	usage                 M
 	actualContextWindow   int
 	search                bool
+	auxiliary             bool
 	allowed               map[string]bool
 	currentContext        M
 	contextHash           string
 	contextChanged        bool
 	model                 string
 	contextWindow         int
+	statePath             string
+	lease                 *os.File
+	primary               bool
+	compactHash           string
+	baseSystemHash        string
+	resetHistory          bool
+	recoveredPending      []savedPending
+	requestHashes         []string
+	inFlight              bool
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
+	return openConversation(ctx, rpc, p, cwd, key, nil)
+}
+func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string, saved *sessionCheckpoint) (*conversation, error) {
 	config := M{"project_doc_max_bytes": 0, "web_search": "disabled"}
 	instructions := hostInstructions + dispatcherInstructions
 	specs := dispatcherSpecs()
@@ -58,23 +72,50 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 		config["model_context_window"] = p.ContextWindow
 		config["model_auto_compact_token_limit"] = p.EffectiveContextWindow
 	}
-	result, e := rpc.Call(ctx, "thread/start", M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": true, "environments": []any{}, "dynamicTools": specs, "config": config})
+	params := M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": !p.Persistent, "environments": []any{}, "dynamicTools": specs, "config": config}
+	method := "thread/start"
+	if saved != nil {
+		method = "thread/resume"
+		params["threadId"] = saved.ThreadID
+		params["excludeTurns"] = true
+		delete(params, "ephemeral")
+		delete(params, "dynamicTools")
+		delete(params, "environments")
+	}
+	result, e := rpc.Call(ctx, method, params)
 	if e != nil {
 		rpc.Close()
 		return nil, e
 	}
 	id := str(object(result["thread"])["id"])
-	if id == "" {
+	if id == "" || (saved != nil && id != saved.ThreadID) {
 		rpc.Close()
 		return nil, upstream("Codex returned an invalid thread")
 	}
-	c := &conversation{contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
+	c := &conversation{auxiliary: p.Auxiliary, baseSystemHash: p.BaseSystemHash, compactHash: p.CompactHash, contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
+	if saved != nil {
+		c.expected = append([]string{}, saved.Expected...)
+		c.primary = saved.Primary
+		c.compactHash = saved.CompactHash
+		c.recoveredPending = saved.Pending
+		c.resetHistory = !prefixMatches(p.Hashes, c.expected)
+	}
 	if !c.search {
 		c.updateHost(p)
 	}
 	return c, nil
 }
 func (c *conversation) advance(ctx context.Context, p *prepared) error {
+	if c.resetHistory {
+		if err := c.interruptForCompaction(ctx); err != nil {
+			return err
+		}
+	}
+	c.requestHashes = append([]string{}, p.Hashes...)
+	c.inFlight = true
+	if err := c.saveState(); err != nil {
+		return err
+	}
 	if !c.search {
 		c.updateHost(p)
 	}
@@ -146,10 +187,18 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		return nil
 	}
 	messages := p.Messages
-	if len(c.expected) > 0 {
+	if len(c.expected) > 0 && !c.resetHistory {
 		messages = messages[len(c.expected):]
 	}
 	inputs, e := transcriptInput(messages)
+	if c.resetHistory {
+		inputs = append([]any{M{"type": "text", "text": "Claude compacted or recovered its host transcript. This is a summary/current view of the SAME conversation, not a new task or a request to repeat tools. Preserve your existing native context. Apply the summary and respond only to its latest request; never re-execute historical tool calls."}}, inputs...)
+	}
+	for _, pending := range c.recoveredPending {
+		if pending.Name == "AskUserQuestion" {
+			inputs = append(inputs, M{"type": "text", "text": "The host messages above contain the current human reply/cancellation from AskUserQuestion. Respect that decision; do not repeat the question or treat cancellation as approval."})
+		}
+	}
 	if e != nil {
 		return e
 	}
@@ -169,6 +218,9 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	_, e = c.rpc.Call(ctx, "turn/start", params)
 	if e == nil {
 		c.model = p.Model
+		c.resetHistory = false
+		c.compactHash = p.CompactHash
+		c.recoveredPending = nil
 		c.contextSent()
 	}
 	return e
@@ -233,6 +285,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				}
 				publicID := uid("toolu_")
 				c.pending = append(c.pending, pendingTool{RPCID: id, PublicID: publicID, TurnID: str(p["turnId"]), Name: name})
+				if err := c.saveState(); err != nil {
+					return err
+				}
 				if e := emit("tool", M{"type": "tool_use", "id": publicID, "name": name, "input": args}); e != nil {
 					return e
 				}
@@ -320,6 +375,7 @@ type Bridge struct {
 	cache                      []cachedResponse
 	cacheBytes                 int
 	factory                    backendFactory
+	stateDir                   string
 }
 
 func newBridge(command []string, cwd, model string, catalog []M, aliases map[string]string, timeout time.Duration, maxSessions, window int, effort string) *Bridge {
@@ -377,6 +433,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 	requestKey := hash(M{"key": key, "messages": p.Hashes})
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.pruneStoppedLocked()
 	for _, cached := range b.cache {
 		if cached.key == requestKey {
 			if cached.pendingThread != "" {
@@ -399,7 +456,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		}
 	}
 	for _, c := range b.sessions {
-		compatible := c.key == key || (p.HostIdentity != "" && c.hostIdentity == p.HostIdentity && !c.search && p.Search == nil && c.contextWindow == p.ContextWindow)
+		compatible := (c.key == key || (p.HostIdentity != "" && c.hostIdentity == p.HostIdentity && !c.search && p.Search == nil && c.contextWindow == p.ContextWindow)) && c.auxiliary == p.Auxiliary
 		if compatible && prefixMatches(p.Hashes, c.expected) {
 			if !c.mu.TryLock() {
 				return nil, nil, "", nil, &bridgeError{409, "This conversation already has a request in flight"}
@@ -432,6 +489,42 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			return c, p, requestKey, nil, nil
 		}
 	}
+	if p.HostIdentity != "" && p.CompactHash != "" && p.Search == nil && !p.Auxiliary {
+		candidates := []*conversation{}
+		newCompaction := true
+		identityCount := 0
+		var only *conversation
+		for _, c := range b.sessions {
+			if c.hostIdentity == p.HostIdentity && !c.search && !c.auxiliary {
+				identityCount++
+				if c.compactHash == p.CompactHash {
+					newCompaction = false
+				}
+				only = c
+				if c.compactHash != p.CompactHash && c.baseSystemHash == p.BaseSystemHash {
+					candidates = append(candidates, c)
+				}
+			}
+		}
+		if !newCompaction {
+			candidates = nil
+		}
+		if newCompaction && len(candidates) == 0 && identityCount == 1 && only.compactHash != p.CompactHash {
+			candidates = append(candidates, only)
+		}
+		if len(candidates) > 1 {
+			return nil, nil, "", nil, &bridgeError{409, "Compacted history matches multiple branches; refusing to mix their contexts"}
+		}
+		if len(candidates) == 1 {
+			c := candidates[0]
+			if !c.mu.TryLock() {
+				return nil, nil, "", nil, &bridgeError{409, "This conversation already has a request in flight"}
+			}
+			c.resetHistory = true
+			b.trace("compact", c, "host_history_compacted")
+			return c, p, requestKey, nil, nil
+		}
+	}
 	b.retireSupersededLocked(p, key)
 	b.reapLocked(time.Now().Add(-30 * time.Minute))
 	if b.maxSessions > 0 && len(b.sessions) >= b.maxSessions {
@@ -449,19 +542,19 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			return nil, nil, "", nil, &bridgeError{503, "Too many live conversations; finish a pending tool or restart"}
 		}
 		b.removeLocked(oldest)
-		oldest.rpc.Close()
+		oldest.close()
 	}
-	rpc, e := b.factory(ctx, b.command, b.cwd, b.timeout)
-	if e != nil {
-		return nil, nil, "", nil, e
-	}
-	c, e := newConversation(ctx, rpc, p, b.cwd, key)
+	c, resumed, e := b.openPersistent(ctx, p, key)
 	if e != nil {
 		return nil, nil, "", nil, e
 	}
 	c.mu.Lock()
 	b.sessions = append(b.sessions, c)
-	b.trace("new", c, "no_reusable_conversation")
+	if resumed {
+		b.trace("resume", c, "persistent_thread_resumed")
+	} else {
+		b.trace("new", c, "no_reusable_conversation")
+	}
 	return c, p, requestKey, nil, nil
 }
 
@@ -469,7 +562,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 // supersedes that branch if its configuration changed. Never leave the old
 // native turn waiting forever, and never retire another session or busy branch.
 func (b *Bridge) retireSupersededLocked(p *prepared, key string) {
-	if p.HostIdentity == "" {
+	if p.HostIdentity == "" || p.Auxiliary {
 		return
 	}
 	for i := 0; i < len(b.sessions); {
@@ -505,7 +598,7 @@ func (b *Bridge) retireSupersededLocked(p *prepared, key string) {
 		}
 		b.removeLocked(c)
 		b.trace("retire", c, "configuration_changed_same_history")
-		c.rpc.Close()
+		c.close()
 		c.mu.Unlock()
 	}
 }
@@ -517,7 +610,17 @@ func (b *Bridge) trace(event string, c *conversation, reason string) {
 	if len(identity) > 12 {
 		identity = identity[:12]
 	}
-	fmt.Fprintf(os.Stderr, "gpt-bridge: event=%s thread=%s host=%s live=%d reason=%s\n", event, c.threadID, identity, len(b.sessions), reason)
+	role := "conversation"
+	if c.primary {
+		role = "primary"
+	}
+	if c.search {
+		role = "web_search"
+	}
+	if c.auxiliary {
+		role = "compact_summary"
+	}
+	fmt.Fprintf(os.Stderr, "gpt-bridge: event=%s thread=%s host=%s live=%d role=%s reason=%s\n", event, c.threadID, identity, len(b.sessions), role, reason)
 }
 
 func (b *Bridge) removeLocked(c *conversation) {
@@ -528,17 +631,23 @@ func (b *Bridge) removeLocked(c *conversation) {
 		}
 	}
 }
-func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) {
+func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c.expected = append(append([]string{}, p.Hashes...), hash(M{"role": "assistant", "content": response["content"]}))
 	c.lastUsed = time.Now()
+	c.inFlight = false
+	c.requestHashes = nil
+	c.compactHash = p.CompactHash
+	if err := c.saveState(); err != nil {
+		return err
+	}
 	// Bound cached response memory as well as entry count. Cache only the response,
 	// never another copy of a potentially multi-megabyte request transcript.
 	raw := encode(response)
 	const maxCacheBytes = 64 << 20
 	if len(raw) > maxCacheBytes {
-		return
+		return nil
 	}
 	pendingThread := ""
 	if response["stop_reason"] == "tool_use" {
@@ -550,23 +659,28 @@ func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) {
 		b.cacheBytes -= len(b.cache[0].data)
 		b.cache = b.cache[1:]
 	}
+	if c.auxiliary && len(c.pending) == 0 {
+		b.removeLocked(c)
+		c.close()
+	}
+	return nil
 }
 func (b *Bridge) discard(c *conversation) {
 	b.mu.Lock()
 	b.removeLocked(c)
 	b.mu.Unlock()
-	c.rpc.Close()
+	c.close()
 }
 func (b *Bridge) reapLocked(before time.Time) {
 	for i := 0; i < len(b.sessions); {
 		c := b.sessions[i]
-		if c.hostIdentity != "" && !c.search {
+		if c.hostIdentity != "" && !c.search && !c.auxiliary {
 			i++
 			continue
 		}
 		if c.lastUsed.Before(before) && c.mu.TryLock() {
 			b.sessions = append(b.sessions[:i], b.sessions[i+1:]...)
-			c.rpc.Close()
+			c.close()
 			c.mu.Unlock()
 		} else {
 			i++
@@ -597,7 +711,7 @@ func (b *Bridge) close() {
 	var wg sync.WaitGroup
 	for _, c := range sessions {
 		wg.Add(1)
-		go func(c *conversation) { defer wg.Done(); c.rpc.Close() }(c)
+		go func(c *conversation) { defer wg.Done(); c.mu.Lock(); defer c.mu.Unlock(); c.close() }(c)
 	}
 	wg.Wait()
 }

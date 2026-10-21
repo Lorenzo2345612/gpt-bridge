@@ -81,7 +81,12 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 		if specs := array(p["dynamicTools"]); len(specs) > 0 {
 			f.tool = str(object(specs[0])["name"])
 		}
-		return M{"thread": M{"id": "test-thread"}}, nil
+		return M{"thread": M{"id": uid("thread_")}}, nil
+	case "thread/resume":
+		f.tool = dispatcherName
+		return M{"thread": M{"id": p["threadId"]}}, nil
+	case "turn/interrupt":
+		f.events <- M{"method": "turn/completed", "params": M{"turn": M{"id": p["turnId"], "status": "interrupted"}}}
 	case "turn/start":
 		var active []any
 		if f.tool == dispatcherName {

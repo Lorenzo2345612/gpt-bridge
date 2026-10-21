@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.4.0"
+const bridgeVersion = "0.5.0"
 
 type options struct {
 	serve, check, models, version      bool
@@ -278,6 +278,12 @@ func run(args []string) (exitCode int, runError error) {
 		return 1, bad("Local bridge token must have at least 24 characters")
 	}
 	b := newBridge(command, cwd, model, catalog, roles, timeout, opts.maxSessions, opts.window, opts.effort)
+	b.stateDir = fallback(os.Getenv("CLAUDE_CODEX_STATE_DIR"), filepath.Join(claudeConfig(), "gpt-bridge", "sessions", hash(codexHome())[:16]))
+	for _, arg := range opts.claudeArgs {
+		if arg == "--no-session-persistence" {
+			b.stateDir = ""
+		}
+	}
 	defer b.close()
 	go b.janitor(ctx)
 	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", opts.port))

@@ -472,6 +472,11 @@ func requestEffort(body M) (string, error) {
 type prepared struct {
 	Search                                M
 	HostIdentity                          string
+	Persistent                            bool
+	Auxiliary                             bool
+	CompactHash                           string
+	BaseSystemHash                        string
+	NamedSession                          bool
 	System, Model, Effort                 string
 	Specs                                 []any
 	Names                                 map[string]string
@@ -535,6 +540,7 @@ func prepare(body M, def string, aliases map[string]string) (*prepared, error) {
 	default:
 		return nil, bad("system must be text or text blocks")
 	}
+	baseSystemHash := hash(system)
 	if len(updates) > 0 {
 		system += "\n\n" + strings.Join(updates, "\n\n")
 	}
@@ -583,7 +589,7 @@ func prepare(body M, def string, aliases map[string]string) (*prepared, error) {
 	}
 	identity := ""
 	if value := str(object(body["metadata"])["user_id"]); value != "" {
-		identity = hash(value)
+		identity = hostIdentity(value)
 	}
-	return &prepared{HostIdentity: identity, Search: search, System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
+	return &prepared{NamedSession: namedClaudeSession(str(object(body["metadata"])["user_id"])), Auxiliary: compactionRequest(messages), BaseSystemHash: baseSystemHash, CompactHash: compactionHash(messages), HostIdentity: identity, Search: search, System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
 }

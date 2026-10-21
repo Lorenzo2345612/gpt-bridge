@@ -222,7 +222,10 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	response["content"] = content
 	if c != nil {
-		h.bridge.commit(c, p, key, response)
+		if e = h.bridge.commit(c, p, key, response); e != nil {
+			fail(e)
+			return
+		}
 	}
 	successful = true
 	if streaming {

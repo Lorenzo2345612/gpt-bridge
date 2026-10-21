@@ -244,11 +244,44 @@ manifiesto indica cuántos bloques forman la configuración vigente. Los cambios
 llegan mediante `turn/start` o `turn/steer` antes de devolver el resultado de una
 herramienta pendiente. Claude sigue validando y ejecutando las herramientas.
 
-Las sesiones anónimas conservan la comprobación estricta anterior. Reiniciar el
-puente, compactar/reemplazar el historial, cambiar la ventana nativa o perder el
-proceso de Codex puede requerir reconstrucción; no se promete persistencia del
-thread entre ejecuciones. Un máximo de sesiones configurado explícitamente puede
-expulsar conversaciones libres para admitir otras.
+Las sesiones identificadas de Claude conservan su thread entre ejecuciones.
+Desde 0.5.0, el puente crea un thread persistente (`ephemeral: false`) y guarda
+su enlace en `~/.claude/gpt-bridge/sessions/`, o dentro de `CLAUDE_CONFIG_DIR`
+si usas otro perfil. `CLAUDE_CODEX_STATE_DIR` permite elegir otra carpeta. La ruta
+predeterminada separa también los distintos `CODEX_HOME`.
+
+Los JSON del puente contienen IDs, huellas del historial, llamadas pendientes y
+estado de recuperación; no contienen prompts, comandos ni resultados de
+herramientas. Codex guarda el historial nativo en su propio almacén. Se escriben
+checkpoints antes de inferir, antes de entregar una herramienta y al completar
+la respuesta, con reemplazo atómico y sincronización. En Unix la carpeta tiene
+modo 0700 y los archivos 0600; en Windows se heredan los permisos del perfil.
+Los bloqueos del sistema operativo evitan que dos puentes usen simultáneamente
+la misma conversación y se liberan también si un proceso muere.
+
+Al abrir de nuevo una sesión, el puente usa `thread/resume` con el ID guardado.
+Si Claude compacta, añade su resumen como la vista actual de la misma conversación,
+sin sustituir el historial nativo ni crear otro thread principal. Si hay un turno
+nativo esperando una herramienta durante la compactación, lo interrumpe antes de
+continuar en ese mismo thread. Una llamada pendiente tras reiniciar se recupera
+mediante el resultado guardado por Claude, sin reutilizar los IDs RPC de la conexión
+anterior. La petición auxiliar que Claude hace para generar el resumen es efímera
+y se mantiene separada del thread principal.
+
+Los enlaces no caducan automáticamente: duran hasta que los borres. No son
+archivos de `/tmp`, por lo que sobreviven a reinicios del sistema. No borres el
+historial nativo de Codex si quieres conservar esos threads. Un checkpoint
+corrupto, un thread eliminado o una conversación ya abierta en otro puente
+producen un error; el puente no borra el enlace ni crea silenciosamente otro ID.
+Si no puede distinguir varias ramas después de una compactación, rechaza la
+operación en lugar de mezclar contextos.
+
+`--no-session-persistence` desactiva también la persistencia del puente para esa
+ejecución. Las peticiones sin identidad estable de Claude siguen siendo efímeras.
+Los threads de versiones anteriores eran efímeros: la primera apertura con 0.5.0
+importa el historial de Claude una vez; las posteriores reanudan el thread guardado.
+Un máximo de sesiones configurado puede cerrar procesos libres; sus enlaces
+persistentes permiten volver al mismo ID cuando se necesiten.
 
 Para comprobar la reutilización en una ejecución concreta:
 
@@ -256,11 +289,13 @@ Para comprobar la reutilización en una ejecución concreta:
 CLAUDE_CODEX_TRACE=1 claude-codex --resume
 ```
 
-La traza imprime `event=new`, `event=reuse` o `event=retire`, el ID nativo, una
+La traza imprime `event=new`, `event=reuse`, `event=resume`, `event=compact` o
+`event=retire`, el ID nativo, el tipo de conversación (`role=primary`,
+`role=compact_summary`, etc.), una
 huella de la identidad del host y el número de conversaciones vivas. No imprime
 prompts, resultados de herramientas ni credenciales. La caché de tokens de
-OpenAI es independiente de la reutilización del thread: un thread reconstruido
-puede aprovechar prefijos cacheados, pero no garantiza el mismo rendimiento.
+OpenAI es independiente de la persistencia del thread: conservar su ID e historial
+no garantiza que el proveedor mantenga cacheados todos los tokens.
 
 
 ## Verificación de la migración a Go
@@ -303,8 +338,9 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
 
 - Es una integración propia, no una función oficial de Claude Code. El protocolo
   experimental del app-server puede cambiar con una actualización de Codex.
-- Conserva las sesiones de Claude. Al reabrirlas o después de compactar, reconstruye
-  el contexto de Codex como un historial JSON con roles, herramientas y resultados.
+- Conserva las sesiones identificadas de Claude y reanuda su thread nativo después
+  de cerrar o compactar. La primera importación y las peticiones anónimas envían
+  el historial como JSON con roles, herramientas y resultados.
   Si el texto supera los 1.048.576 caracteres que admite `turn/start`, lo añade
   mediante `thread/inject_items` y envía una instrucción corta para continuar.
   Conserva el texto íntegro; no recupera razonamiento interno ni convierte las
@@ -349,6 +385,8 @@ python3 smoke_question.py --delay 65
 python3 smoke_search.py
 python3 smoke_reuse.py
 python3 smoke_stable_context.py
+python3 smoke_persistence.py
+python3 smoke_resume_cli.py
 ```
 
 Prueba manual del cliente real:
