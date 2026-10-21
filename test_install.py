@@ -58,6 +58,20 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertEqual(self.rc.read_text(), original)
 
+    def test_zsh_rc_and_readlink_without_gnu_options(self):
+        mock_bin = self.home/'mock-bin'
+        mock_bin.mkdir()
+        readlink = mock_bin/'readlink'
+        readlink.write_text('#!/usr/bin/env python3\nimport os, sys\nif len(sys.argv) != 2 or sys.argv[1].startswith("-"): sys.exit(99)\nprint(os.readlink(sys.argv[1]))\n')
+        readlink.chmod(0o755)
+        self.env['PATH'] = str(mock_bin) + os.pathsep + self.env['PATH']
+        self.env['SHELL'] = '/bin/zsh'
+        for _ in range(2):
+            result = self.install('--alias', 'portable-gpt', '--yolo-alias', '-')
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('gpt-bridge aliases', (self.home/'.zshrc').read_text())
+        self.assertNotIn('gpt-bridge aliases', self.rc.read_text())
+
     def test_interactive_prompts_accept_custom_names(self):
         master, slave = pty.openpty()
         process = subprocess.Popen(self.args, env=self.env, stdin=slave, stdout=slave, stderr=slave)

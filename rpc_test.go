@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -38,8 +37,7 @@ func TestRPCProcessHelper(t *testing.T) {
 			result = M{"account": M{"type": fallback(os.Getenv("GO_BRIDGE_RPC_AUTH"), "chatgpt")}}
 		case "echo":
 			result = object(msg["params"])
-			group, _ := syscall.Getpgid(0)
-			result["own_process_group"] = group == os.Getpid()
+			result["own_process_group"] = helperProcessIsolated()
 		case "event":
 			fmt.Println(string(encode(M{"method": "test/event", "params": M{"value": "ok"}})))
 		case "invalid":
@@ -109,8 +107,8 @@ func TestRPCSubprocessRoundTripCancellationAndCleanup(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Backend process not reaped")
 	}
-	if e = syscall.Kill(pid, 0); e != syscall.ESRCH {
-		t.Fatal("Backend still alive", pid, e)
+	if helperProcessExists(pid) {
+		t.Fatal("Backend still alive", pid)
 	}
 }
 func TestRPCRejectsAPIKeyAccount(t *testing.T) {

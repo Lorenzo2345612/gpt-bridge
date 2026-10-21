@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -29,13 +28,17 @@ type rpcClient struct {
 	next         uint64
 	replies      map[string]chan M
 	timeout      time.Duration
+	scope        *processScope
 }
 
 func newRPC(ctx context.Context, command []string, cwd string, timeout time.Duration) (backend, error) {
-	cmd := exec.Command(command[0], command[1:]...)
+	cmd, e := platformCommand(command[0], command[1:]...)
+	if e != nil {
+		return nil, e
+	}
 	cmd.Dir = cwd
 	cmd.Env = envList(without(envMap(os.Environ()), "OPENAI_API_KEY"))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	configureBackend(cmd)
 	stdin, e := cmd.StdinPipe()
 	if e != nil {
 		return nil, e
@@ -50,7 +53,14 @@ func newRPC(ctx context.Context, command []string, cwd string, timeout time.Dura
 		stdin.Close()
 		return nil, e
 	}
-	r := &rpcClient{cmd: cmd, stdin: stdin, events: make(chan M, 256), done: make(chan struct{}), waited: make(chan struct{}), replies: map[string]chan M{}, timeout: timeout}
+	scope, e := trackProcess(cmd.Process, true)
+	if e != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = stdin.Close()
+		return nil, fmt.Errorf("could not isolate Codex process: %w", e)
+	}
+	r := &rpcClient{cmd: cmd, scope: scope, stdin: stdin, events: make(chan M, 256), done: make(chan struct{}), waited: make(chan struct{}), replies: map[string]chan M{}, timeout: timeout}
 	go r.read(stdout)
 	go func() { _ = cmd.Wait(); close(r.waited) }()
 	_, e = r.Call(ctx, "initialize", M{"clientInfo": M{"name": "claude_codex_bridge", "title": "Claude Codex Bridge", "version": bridgeVersion}, "capabilities": M{"experimentalApi": true}})
@@ -153,6 +163,7 @@ func (r *rpcClient) Call(ctx context.Context, method string, params M) (M, error
 	}
 }
 func (r *rpcClient) Close() {
+	defer r.scope.close()
 	r.stop()
 	_ = r.stdin.Close()
 	select {
@@ -161,11 +172,11 @@ func (r *rpcClient) Close() {
 	default:
 	}
 	// Each backend is a new session/process group. Never signal the user's shell.
-	_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
+	r.scope.terminate()
 	select {
 	case <-r.waited:
 	case <-time.After(3 * time.Second):
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+		r.scope.kill()
 		select {
 		case <-r.waited:
 		case <-time.After(time.Second):

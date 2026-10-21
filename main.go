@@ -16,11 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
-const bridgeVersion = "0.2.1"
+const bridgeVersion = "0.3.0"
 
 type options struct {
 	serve, check, models, version      bool
@@ -167,7 +166,7 @@ func run(args []string) (exitCode int, runError error) {
 	// Install handlers before spawning any subprocess, so startup interruption
 	// also cleans up. Each Codex backend owns its separate process group.
 	signals := make(chan os.Signal, 4)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(signals, terminationSignals()...)
 	defer signal.Stop(signals)
 	var childStarted atomic.Bool
 	var interrupted atomic.Int32
@@ -186,10 +185,10 @@ func run(args []string) (exitCode int, runError error) {
 			case <-monitorStop:
 				return
 			case sig := <-signals:
-				if sig == syscall.SIGINT && childStarted.Load() {
+				if sig == os.Interrupt && childStarted.Load() {
 					continue
 				}
-				interrupted.CompareAndSwap(0, int32(sig.(syscall.Signal)))
+				interrupted.CompareAndSwap(0, int32(signalNumber(sig)))
 				cancel()
 				select {
 				case notifications <- sig:
@@ -293,7 +292,7 @@ func run(args []string) (exitCode int, runError error) {
 		fmt.Printf("Claude Codex Bridge listening at %s (Go)\n", url)
 		sig := <-notifications
 		cancel()
-		return 128 + int(sig.(syscall.Signal)), nil
+		return 128 + signalNumber(sig), nil
 	}
 	claude, e := exec.LookPath("claude")
 	if e != nil {
@@ -319,7 +318,10 @@ func run(args []string) (exitCode int, runError error) {
 	original := readSettings(profile)
 	fmt.Fprintf(os.Stderr, "claude-codex: %s · ChatGPT subscription · %s · Go\n", model, claudeConfig())
 	claudeArgs := append([]string{"--settings", settingsPath, "--agents", string(encode(modelAgents(catalog)))}, opts.claudeArgs...)
-	child := exec.Command(claude, claudeArgs...)
+	child, e := platformCommand(claude, claudeArgs...)
+	if e != nil {
+		return 1, e
+	}
 	child.Env = envList(env)
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
@@ -327,6 +329,13 @@ func run(args []string) (exitCode int, runError error) {
 	if e = child.Start(); e != nil {
 		return 1, e
 	}
+	childScope, e := trackProcess(child.Process, false)
+	if e != nil {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		return 1, fmt.Errorf("could not isolate Claude process: %w", e)
+	}
+	defer childScope.close()
 	childStarted.Store(true)
 	defer func() {
 		if e := restoreHostModel(profile, original, known); e != nil {
@@ -344,23 +353,19 @@ func run(args []string) (exitCode int, runError error) {
 			}
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
-				code := exit.ExitCode()
-				if code < 0 {
-					code = 128 + int(exit.Sys().(syscall.WaitStatus).Signal())
-				}
-				return code, nil
+				return processExitCode(exit), nil
 			}
 			return 1, err
 		case sig := <-notifications:
 			cancel()
-			_ = child.Process.Signal(syscall.SIGTERM)
+			childScope.terminate()
 			select {
 			case <-exited:
 			case <-time.After(5 * time.Second):
-				_ = child.Process.Kill()
+				childScope.kill()
 				<-exited
 			}
-			return 128 + int(sig.(syscall.Signal)), nil
+			return 128 + signalNumber(sig), nil
 		}
 	}
 }

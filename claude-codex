@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-bridge_dir="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+bridge_path="${BASH_SOURCE[0]}"
+while [[ -L "$bridge_path" ]]; do
+  bridge_parent="$(cd -P -- "$(dirname -- "$bridge_path")" && pwd)"
+  bridge_path="$(readlink "$bridge_path")"
+  [[ "$bridge_path" == /* ]] || bridge_path="$bridge_parent/$bridge_path"
+done
+bridge_dir="$(cd -P -- "$(dirname -- "$bridge_path")" && pwd)"
 if [[ ! -x "$bridge_dir/dist/claude-codex" ]]; then
   echo "Build the Go bridge first: bash $bridge_dir/install.sh" >&2
   exit 1

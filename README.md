@@ -11,11 +11,15 @@ la autenticación queda en el CLI oficial de Codex.
 ## Instalación y uso
 
 El runtime es un ejecutable nativo en **Go**, sin Python ni dependencias de
-runtime adicionales. Requiere Linux, Claude Code y Codex CLI en `PATH`.
+runtime adicionales. Funciona en Linux, macOS y Windows; requiere Claude Code
+y Codex CLI en `PATH`, autenticado mediante `codex login`.
 Para compilar requiere Go 1.23 o posterior; para instalar un binario ya compilado
-se admite `install.sh --binary RUTA`. Solo el lector de TOML tiene una dependencia
-externa, fijada en `go.mod` y verificada mediante `go.sum`.
+se admite `install.sh --binary RUTA` o `install.ps1 -Binary RUTA`.
+Las dependencias de TOML y procesos de Windows están fijadas en `go.mod`
+y verificadas mediante `go.sum`.
 Implementado y probado con Codex 0.163.0 y Claude Code 2.1.304.
+
+En Linux y macOS (Bash/zsh):
 
 ```bash
 git clone https://github.com/Lorenzo2345612/gpt-bridge.git
@@ -28,12 +32,43 @@ claude-codex --resume
 claude-codex --resume ID_DE_SESION
 ```
 
+En Windows, desde PowerShell 5.1 o posterior:
+
+```powershell
+git clone https://github.com/Lorenzo2345612/gpt-bridge.git
+cd gpt-bridge
+codex login
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+# Abre otra terminal o ejecuta la línea de activación que imprime el instalador.
+claude-codex --resume
+```
+
+`ExecutionPolicy Bypass` se aplica únicamente a ese proceso de instalación.
+No requiere permisos de administrador. Windows instala en
+`%LOCALAPPDATA%\gpt-bridge`, añade su carpeta `bin` al PATH del usuario y carga
+los alias desde el perfil de PowerShell. Para automatizar:
+
+```powershell
+.\install.ps1 -Alias mi-gpt -YoloAlias mi-gpt-yolo
+.\install.ps1 -NoAliases
+.\install.ps1 -Binary .\dist\claude-codex.exe -NoAliases -NoPath
+```
+
+`-Prefix` cambia el destino, `-ProfilePath` el perfil y `-NoPath` evita modificar
+el PATH. Los alias configurados son para PowerShell; desde CMD puede usarse
+`claude-codex.exe`. Se admiten ejecutables nativos de Claude/Codex y sus shims
+estándar de npm; estos últimos requieren Node en PATH. No se ejecutan shims
+`.cmd` personalizados. El cierre de procesos en Windows usa Job Objects para
+limpiar los hijos del puente sin terminar la terminal que lo lanzó.
+
 El instalador es interactivo y pregunta qué alias quieres para el modo normal
 (por defecto `gpt`) y para YOLO (por defecto `gpt-yolo`). Escribe `-` para omitir
 uno. YOLO añade `--dangerously-skip-permissions`, `CLAUDE_YOLO=1` y compactación
 a los 600.000 tokens. No sobrescribe alias existentes, como `yolo` o
 `claude-2-yolo`. Guarda los nuevos en `~/.config/gpt-bridge/aliases.sh` y añade
 una línea para cargarlos desde `.bashrc` o `.zshrc`, según tu shell.
+En Windows guarda su equivalente `aliases.ps1` dentro de la instalación; el
+modo YOLO restaura las variables del entorno al terminar.
 
 Para automatizar la instalación:
 
@@ -126,12 +161,12 @@ Claude a cada turno de Codex. `--effort` fija el esfuerzo durante esa ejecución
 Los niveles admitidos por cada modelo aparecen en `claude-codex --models`; se
 rechaza un nivel que no está disponible en el modelo seleccionado.
 
-El alias `claude-codex-yolo` admite las mismas opciones:
+El alias YOLO que elijas admite las mismas opciones (ejemplo con `gpt-yolo`):
 
 ```bash
-claude-codex-yolo --resume
-claude-codex-yolo --model gpt-6-astra
-claude-codex-yolo --models
+gpt-yolo --resume
+gpt-yolo --model gpt-6-astra
+gpt-yolo --models
 ```
 
 ## Qué conserva y qué cambia
@@ -181,10 +216,25 @@ Cada proceso nativo de Codex conserva su propio consumo de memoria.
 cd gpt-bridge
 go test -race ./...
 go vet ./...
+python3 -m unittest -v test_install.py
 go test -run '^$' -bench BenchmarkPrepareLargeHistory -benchmem
 # Opcional: hace llamadas reales usando la suscripción.
 python3 smoke_go.py
 ```
+
+Pruebas de instalación en Windows, con un binario compilado para ese sistema:
+
+```powershell
+go test ./...
+go build -o dist/claude-codex.exe .
+.\test_install.ps1 -Binary (Resolve-Path .\dist\claude-codex.exe)
+```
+
+Las pruebas usan directorios y perfiles temporales; no modifican el PATH del
+usuario. Se verificaron en Linux y Windows (PowerShell 5.1), y se compilaron
+binarios para Linux, macOS y Windows en amd64/arm64. La ejecución en macOS y
+la conexión real a Codex desde Windows todavía requieren validación en esos
+entornos; las pruebas de Windows cubren el runtime, protocolo y los instaladores.
 
 `protocol-fixtures.json` contiene 44 casos sintéticos del traductor Python de
 referencia. Las pruebas Go verifican paridad, herramientas concurrentes, SSE,
@@ -279,4 +329,8 @@ el secreto en `x-api-key` o `Authorization: Bearer ...` y usar `/v1/messages`.
 No es una clave de OpenAI. No expongas ese puerto a otras máquinas.
 
 Para retirar la instalación, elimina el enlace `~/.local/bin/claude-codex` y la
-carpeta `~/.local/share/claude-codex-bridge`. Tus configuraciones no se alteran.
+carpeta `~/.local/share/claude-codex-bridge`. Si configuraste alias, retira también
+la línea de carga añadida al archivo de inicio y su archivo `aliases.sh`.
+En Windows retira la línea de carga del perfil, la entrada del PATH de usuario
+y la carpeta de instalación `%LOCALAPPDATA%\gpt-bridge`. Las sesiones de Claude
+se conservan.

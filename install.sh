@@ -2,6 +2,17 @@
 # Build the Go executable and optionally configure Bash/zsh aliases.
 set -euo pipefail
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+resolve_path() {
+  local path="$1" parent destination count=0
+  while [[ -L "$path" ]]; do
+    ((count+=1))
+    if ((count>40)); then echo "Too many symbolic links: $1" >&2; return 1; fi
+    parent="$(cd -P -- "$(dirname -- "$path")" && pwd)"
+    destination="$(readlink "$path")"
+    case "$destination" in /*) path="$destination" ;; *) path="$parent/$destination" ;; esac
+  done
+  printf '%s/%s\n' "$(cd -P -- "$(dirname -- "$path")" && pwd)" "$(basename -- "$path")"
+}
 prefix="$HOME/.local"
 prebuilt=""
 normal_alias=""
@@ -69,7 +80,7 @@ target="$(cd -- "$prefix/share/claude-codex-bridge" && pwd)"
 link="$prefix/bin/claude-codex"
 expected="$target/claude-codex"
 if [[ -L "$link" ]]; then
-  if [[ "$(readlink -f -- "$link")" != "$expected" ]]; then
+  if [[ "$(resolve_path "$link")" != "$expected" ]]; then
     echo "Refusing to replace unrelated symlink: $link" >&2; exit 1
   fi
 elif [[ -e "$link" ]]; then
