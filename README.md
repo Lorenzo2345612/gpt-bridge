@@ -228,6 +228,27 @@ de procesos de conversación no tiene un máximo por defecto. Puedes fijarlo con
 `--max-sessions N`; `--max-sessions 0` significa sin límite.
 Cada proceso nativo de Codex conserva su propio consumo de memoria.
 
+La reutilización exige la misma identidad `metadata.user_id`, configuración y
+prefijo del historial. El ID de sesión de Claude y el ID nativo del thread de
+Codex son distintos: una reanudación o cambio de instrucciones puede reconstruir
+el historial íntegro en un thread nuevo. Si una petición de la misma rama
+responde todas las herramientas pendientes y cambia la configuración, el puente
+cierra la conversación sustituida para que no siga esperando indefinidamente.
+No cierra ramas ocupadas, herramientas sin responder ni sesiones con otra identidad.
+
+Para comprobar la reutilización en una ejecución concreta:
+
+```bash
+CLAUDE_CODEX_TRACE=1 claude-codex --resume
+```
+
+La traza imprime `event=new`, `event=reuse` o `event=retire`, el ID nativo, una
+huella de la identidad del host y el número de conversaciones vivas. No imprime
+prompts, resultados de herramientas ni credenciales. La caché de tokens de
+OpenAI es independiente de la reutilización del thread: un thread reconstruido
+puede aprovechar prefijos cacheados, pero no garantiza el mismo rendimiento.
+
+
 ## Verificación de la migración a Go
 
 ```bash
@@ -308,6 +329,7 @@ claude-codex --check
 python3 smoke_go.py
 python3 smoke_question.py --delay 65
 python3 smoke_search.py
+python3 smoke_reuse.py
 ```
 
 Prueba manual del cliente real:

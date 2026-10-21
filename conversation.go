@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ type conversation struct {
 	mu                    sync.Mutex
 	rpc                   backend
 	key, threadID, effort string
+	hostIdentity          string
 	names                 map[string]string
 	expected              []string // hashes, not a second copy of the entire user transcript
 	pending               []pendingTool
@@ -57,7 +60,7 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 		rpc.Close()
 		return nil, upstream("Codex returned an invalid thread")
 	}
-	return &conversation{search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}, nil
+	return &conversation{hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}, nil
 }
 func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	if len(c.pending) > 0 {
@@ -346,9 +349,11 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			if !c.mu.TryLock() {
 				return nil, nil, "", nil, &bridgeError{409, "This conversation already has a request in flight"}
 			}
+			b.trace("reuse", c, "history_matches")
 			return c, p, requestKey, nil, nil
 		}
 	}
+	b.retireSupersededLocked(p, key)
 	b.reapLocked(time.Now().Add(-30 * time.Minute))
 	if b.maxSessions > 0 && len(b.sessions) >= b.maxSessions {
 		var oldest *conversation
@@ -377,8 +382,65 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 	}
 	c.mu.Lock()
 	b.sessions = append(b.sessions, c)
+	b.trace("new", c, "no_reusable_conversation")
 	return c, p, requestKey, nil, nil
 }
+
+// A request that answers every pending tool of the same history/host branch
+// supersedes that branch if its configuration changed. Never leave the old
+// native turn waiting forever, and never retire another session or busy branch.
+func (b *Bridge) retireSupersededLocked(p *prepared, key string) {
+	if p.HostIdentity == "" {
+		return
+	}
+	for i := 0; i < len(b.sessions); {
+		c := b.sessions[i]
+		if c.key == key || c.hostIdentity != p.HostIdentity || !prefixMatches(p.Hashes, c.expected) || !c.mu.TryLock() {
+			i++
+			continue
+		}
+		answered := map[string]bool{}
+		for _, v := range p.Messages[len(c.expected):] {
+			m := object(v)
+			if m["role"] != "user" {
+				continue
+			}
+			for _, v := range array(m["content"]) {
+				block := object(v)
+				if block["type"] == "tool_result" {
+					answered[str(block["tool_use_id"])] = true
+				}
+			}
+		}
+		complete := true
+		for _, pending := range c.pending {
+			if !answered[pending.PublicID] {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			c.mu.Unlock()
+			i++
+			continue
+		}
+		b.removeLocked(c)
+		b.trace("retire", c, "configuration_changed_same_history")
+		c.rpc.Close()
+		c.mu.Unlock()
+	}
+}
+func (b *Bridge) trace(event string, c *conversation, reason string) {
+	if os.Getenv("CLAUDE_CODEX_TRACE") != "1" {
+		return
+	}
+	identity := c.hostIdentity
+	if len(identity) > 12 {
+		identity = identity[:12]
+	}
+	fmt.Fprintf(os.Stderr, "gpt-bridge: event=%s thread=%s host=%s live=%d reason=%s\n", event, c.threadID, identity, len(b.sessions), reason)
+}
+
 func (b *Bridge) removeLocked(c *conversation) {
 	for i, x := range b.sessions {
 		if x == c {
