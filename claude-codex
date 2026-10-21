@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+bridge_dir="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+if [[ ! -x "$bridge_dir/dist/claude-codex" ]]; then
+  echo "Build the Go bridge first: bash $bridge_dir/install.sh" >&2
+  exit 1
+fi
+exec "$bridge_dir/dist/claude-codex" "$@"

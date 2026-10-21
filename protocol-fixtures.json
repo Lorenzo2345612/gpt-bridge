@@ -1,0 +1,3065 @@
+[
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_47e3e211ab0f4eb7843def0ec24d42c3",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_8298f0ac719b49d0b795cc568b045443",
+              "name": "Skill",
+              "input": {
+                "skill": "second-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_47e3e211ab0f4eb7843def0ec24d42c3",
+              "content": "0"
+            },
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_8298f0ac719b49d0b795cc568b045443",
+              "content": "1"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_47e3e211ab0f4eb7843def0ec24d42c3",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_8298f0ac719b49d0b795cc568b045443",
+              "name": "Skill",
+              "input": {
+                "skill": "second-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_47e3e211ab0f4eb7843def0ec24d42c3",
+              "content": "0"
+            },
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_8298f0ac719b49d0b795cc568b045443",
+              "content": "1"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": []
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_b2799a597a4d41c7b1e4b155a583ad3a",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_b2799a597a4d41c7b1e4b155a583ad3a",
+              "is_error": true,
+              "content": "Claude host denied permission"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_b2799a597a4d41c7b1e4b155a583ad3a",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_b2799a597a4d41c7b1e4b155a583ad3a",
+              "is_error": true,
+              "content": "Claude host denied permission"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "metadata": {
+        "user_id": "session-A"
+      }
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "metadata": {
+        "user_id": "session-B"
+      }
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "One skill is available"
+            },
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__old__read"
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        },
+        {
+          "name": "mcp__old__read",
+          "input_schema": {
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool\n\nOne skill is available",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": []
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_20f4a76900a24d7485144bd4febb5978",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_20f4a76900a24d7485144bd4febb5978",
+              "content": "My skill instructions"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_20f4a76900a24d7485144bd4febb5978",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_20f4a76900a24d7485144bd4febb5978",
+              "content": "My skill instructions"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "stream": true
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [],
+      "stream": true
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Different conversation"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Different conversation"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "tool",
+        "name": "Skill"
+      }
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "error": "Only auto/none tool_choice is supported by this app-server bridge"
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [],
+      "stream": true
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_7e034467bb6444ec8ec16ce580e2f265",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "wrong",
+              "content": "x"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_7e034467bb6444ec8ec16ce580e2f265",
+              "name": "Skill",
+              "input": {
+                "skill": "my-skill"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "wrong",
+              "content": "x"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "Host update"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool\n\nHost update",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "claude-sonnet-test",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "openai-test",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "openai-test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "explicit-openai-model",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "default",
+    "aliases": {},
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "explicit-openai-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "first"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "Old reminder"
+            }
+          ],
+          "clear_at": "next_user_message"
+        },
+        {
+          "role": "assistant",
+          "content": "done"
+        },
+        {
+          "role": "user",
+          "content": "next"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "Current reminder"
+            }
+          ],
+          "clear_at": "next_user_message"
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "\n\nCurrent reminder",
+      "specs": [],
+      "names": {},
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "done"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "next"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "SearchNotes",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          },
+          "defer_loading": true
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "SearchNotes",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          },
+          "defer_loading": true
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_reference",
+                "name": "SearchNotes"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "type": "function",
+          "name": "cc_1_b962b69ec9d2",
+          "description": "Claude Code tool SearchNotes. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill",
+        "cc_1_b962b69ec9d2": "SearchNotes"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__claude_ai_Docs__batch",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__claude_ai_Docs__guide",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__claude_ai_Docs__update",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "Connectors changed"
+            },
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__claude_ai_Docs__batch"
+              }
+            },
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__claude_ai_Docs__guide"
+              }
+            },
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__claude_ai_Docs__update"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "\n\nConnectors changed",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_definition",
+                "definition": {
+                  "name": "New",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "New"
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_reference",
+                "name": "New"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_18fdd549b2ed",
+          "description": "Claude Code tool New. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_18fdd549b2ed": "New"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_definition",
+                "definition": {
+                  "name": "NewTool",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "description": "version1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "NewTool"
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_definition",
+                "definition": {
+                  "name": "NewTool",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "description": "version2"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "type": "function",
+          "name": "cc_1_f8a890d7a92e",
+          "description": "Claude Code tool NewTool. version2",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill",
+        "cc_1_f8a890d7a92e": "NewTool"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_definition",
+                "definition": {
+                  "type": "mcp_toolset",
+                  "mcp_server_name": "remote"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "error": "Server-side Anthropic tools are unsupported; use Claude client tools"
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "mcp__docs__read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "Read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "mcp_tool_reference",
+                "server_name": "docs",
+                "name": "read"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_9b9a8d05a7ec",
+          "description": "Claude Code tool Read. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_9b9a8d05a7ec": "Read"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "mcp__docs__read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__docs__search",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__other__read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "mcp_toolset_reference",
+                "server_name": "docs"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_25469c0d1ef9",
+          "description": "Claude Code tool mcp__other__read. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_25469c0d1ef9": "mcp__other__read"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "mcp__docs__read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__docs__search",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "mcp__other__read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "mcp_toolset_reference",
+                "server_name": "docs"
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "mcp_toolset_reference",
+                "server_name": "docs"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_316ad2e72efc",
+          "description": "Claude Code tool mcp__docs__read. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "type": "function",
+          "name": "cc_1_67b48b78a840",
+          "description": "Claude Code tool mcp__docs__search. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "type": "function",
+          "name": "cc_2_25469c0d1ef9",
+          "description": "Claude Code tool mcp__other__read. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_316ad2e72efc": "mcp__docs__read",
+        "cc_1_67b48b78a840": "mcp__docs__search",
+        "cc_2_25469c0d1ef9": "mcp__other__read"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__old_provider__read"
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "mcp__old_provider__read"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. ",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "first"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "Persistent reminder"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "done"
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "expected": {
+      "system": "\n\nPersistent reminder",
+      "specs": [],
+      "names": {},
+      "model": "test",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "done"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "next"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [
+        {
+          "name": "Read",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_removal",
+              "tool": {
+                "type": "tool_reference",
+                "name": "Read"
+              }
+            }
+          ],
+          "clear_at": "next_user_message"
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "error": "Turn-scoped host instructions cannot change tools"
+  },
+  {
+    "body": {
+      "model": "test",
+      "tools": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "retry"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "tool_addition",
+              "tool": {
+                "type": "tool_reference",
+                "name": "missing"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "default_model": "test",
+    "aliases": {},
+    "error": "Tool addition references an undeclared tool"
+  },
+  {
+    "body": {
+      "model": "gpt-test-sol",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [],
+      "output_config": {
+        "effort": "high"
+      }
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "gpt-test-sol",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": "high"
+    }
+  },
+  {
+    "body": {
+      "model": "gpt-test-sol",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [],
+      "output_config": {
+        "effort": "high"
+      }
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "gpt-test-sol",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": "high"
+    }
+  },
+  {
+    "body": {
+      "model": "claude-opus-5-5",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": []
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "gpt-test-sol",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "gpt-test-sol",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": []
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "gpt-test-sol",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "gpt-test-luna",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "¡Hecho!"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Continue on another model"
+        }
+      ],
+      "tools": []
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [],
+      "names": {},
+      "model": "gpt-test-luna",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "¡Hecho!"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Continue on another model"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "missing-model",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ]
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "missing-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": null
+    }
+  },
+  {
+    "body": {
+      "model": "gpt-test-luna",
+      "max_tokens": 100,
+      "system": "Use my Skill tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use the skill"
+        }
+      ],
+      "tools": [
+        {
+          "name": "Skill",
+          "description": "Load a skill",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "output_config": {
+        "effort": "ultra"
+      }
+    },
+    "default_model": "gpt-test-sol",
+    "aliases": {
+      "opus": "gpt-test-sol",
+      "sonnet": "gpt-test-sol",
+      "haiku": "gpt-test-luna",
+      "fable": "gpt-test-astra"
+    },
+    "expected": {
+      "system": "Use my Skill tool",
+      "specs": [
+        {
+          "type": "function",
+          "name": "cc_0_6df1bb18a59a",
+          "description": "Claude Code tool Skill. Load a skill",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skill"
+            ]
+          }
+        }
+      ],
+      "names": {
+        "cc_0_6df1bb18a59a": "Skill"
+      },
+      "model": "gpt-test-luna",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the skill"
+            }
+          ]
+        }
+      ],
+      "effort": "ultra"
+    }
+  }
+]
