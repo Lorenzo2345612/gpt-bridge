@@ -28,6 +28,26 @@ claude-codex --resume
 claude-codex --resume ID_DE_SESION
 ```
 
+El instalador es interactivo y pregunta qué alias quieres para el modo normal
+(por defecto `gpt`) y para YOLO (por defecto `gpt-yolo`). Escribe `-` para omitir
+uno. YOLO añade `--dangerously-skip-permissions`, `CLAUDE_YOLO=1` y compactación
+a los 600.000 tokens. No sobrescribe alias existentes, como `yolo` o
+`claude-2-yolo`. Guarda los nuevos en `~/.config/gpt-bridge/aliases.sh` y añade
+una línea para cargarlos desde `.bashrc` o `.zshrc`, según tu shell.
+
+Para automatizar la instalación:
+
+```bash
+bash install.sh --alias mi-gpt --yolo-alias mi-gpt-yolo
+# Instalar solo el ejecutable, sin cambiar la configuración del shell:
+bash install.sh --no-aliases
+# Opcional: elegir otro archivo de inicio del shell:
+bash install.sh --alias mi-gpt --yolo-alias mi-gpt-yolo --rc-file ~/.bashrc
+```
+
+Al terminar indica el comando `source` para activar los alias en la terminal
+actual. Las terminales nuevas los cargan automáticamente.
+
 No crea otro perfil de Claude. Si `CLAUDE_CONFIG_DIR` ya está definido, lo
 conserva; si no, lo deja sin definir. Usa por tanto el mismo almacén de sesiones
 y las mismas personalizaciones que `claude` ejecutado en ese entorno.
