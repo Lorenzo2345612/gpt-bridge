@@ -24,15 +24,30 @@ type conversation struct {
 	lastUsed              time.Time
 	usage                 M
 	actualContextWindow   int
+	search                bool
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
-	config := M{"project_doc_max_bytes": 0}
+	config := M{"project_doc_max_bytes": 0, "web_search": "disabled"}
+	instructions := hostInstructions + p.System
+	if p.Search != nil {
+		config["web_search"] = "live"
+		searchConfig := M{"context_size": "medium"}
+		if domains := array(p.Search["allowed_domains"]); len(domains) > 0 {
+			searchConfig["allowed_domains"] = domains
+		}
+		config["tools"] = M{"web_search": searchConfig}
+		instructions = searchInstructions
+		if domains := array(p.Search["allowed_domains"]); len(domains) > 0 {
+			instructions += "Only return source URLs belonging to these allowed domains (or their subdomains); do not add other links from memory: " + string(encode(domains)) + "\n\n"
+		}
+		instructions += p.System
+	}
 	if p.ContextWindow > 0 {
 		config["model_context_window"] = p.ContextWindow
 		config["model_auto_compact_token_limit"] = p.EffectiveContextWindow
 	}
-	result, e := rpc.Call(ctx, "thread/start", M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": hostInstructions + p.System, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": true, "environments": []any{}, "dynamicTools": p.Specs, "config": config})
+	result, e := rpc.Call(ctx, "thread/start", M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": true, "environments": []any{}, "dynamicTools": p.Specs, "config": config})
 	if e != nil {
 		rpc.Close()
 		return nil, e
@@ -42,7 +57,7 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 		rpc.Close()
 		return nil, upstream("Codex returned an invalid thread")
 	}
-	return &conversation{rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}, nil
+	return &conversation{search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}, nil
 }
 func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	if len(c.pending) > 0 {
@@ -131,6 +146,7 @@ type emitFunc func(string, any) error
 
 func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 	texts := map[string]string{}
+	searched := false
 	ping := time.NewTicker(5 * time.Second)
 	defer ping.Stop()
 	var batch <-chan time.Time
@@ -199,6 +215,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				}
 			case "item/completed":
 				item := object(p["item"])
+				if item["type"] == "webSearch" {
+					searched = true
+				}
 				if item["type"] == "agentMessage" {
 					id := str(item["id"])
 					text := str(item["text"])
@@ -228,6 +247,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 						detail = turn["status"]
 					}
 					return upstream("Codex turn failed: %s", encode(detail))
+				}
+				if c.search && !searched {
+					return upstream("Codex web search completed without executing a search; retry the request")
 				}
 				return emit("done", M{"reason": "end_turn", "usage": c.usage})
 			case "error":
@@ -310,7 +332,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		percent = 95
 	}
 	p.EffectiveContextWindow = p.ContextWindow * percent / 100
-	key := hash(M{"system": p.System, "specs": p.Specs, "model": p.Model, "effort": p.Effort, "context_window": p.ContextWindow, "host_identity": object(body["metadata"])["user_id"]})
+	key := hash(M{"search": p.Search, "system": p.System, "specs": p.Specs, "model": p.Model, "effort": p.Effort, "context_window": p.ContextWindow, "host_identity": object(body["metadata"])["user_id"]})
 	requestKey := hash(M{"key": key, "messages": p.Hashes})
 	b.mu.Lock()
 	defer b.mu.Unlock()

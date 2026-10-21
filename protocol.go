@@ -470,6 +470,7 @@ func requestEffort(body M) (string, error) {
 }
 
 type prepared struct {
+	Search                                M
 	System, Model, Effort                 string
 	Specs                                 []any
 	Names                                 map[string]string
@@ -490,6 +491,10 @@ func prepare(body M, def string, aliases map[string]string) (*prepared, error) {
 		if !ok {
 			return nil, bad("tools must be an array")
 		}
+	}
+	body, search, tools, e := searchRequest(body, tools)
+	if e != nil {
+		return nil, e
 	}
 	messages, updates, tools, e := hostContext(messages, tools)
 	if e != nil {
@@ -575,5 +580,5 @@ func prepare(body M, def string, aliases map[string]string) (*prepared, error) {
 	for i, v := range messages {
 		hashes[i] = hash(v)
 	}
-	return &prepared{System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
+	return &prepared{Search: search, System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
 }

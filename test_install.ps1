@@ -13,10 +13,10 @@ try {
     [IO.File]::WriteAllText($TestProfile, $Original)
     & $Installer -Prefix $Prefix -Binary $Binary -Alias bridge-test -YoloAlias bridge-test-yolo -ProfilePath $TestProfile -NoPath
     . $TestProfile
-    Assert ((bridge-test --bridge-version) -match '0\.3\.0') 'Normal alias failed'
+    Assert ((bridge-test --bridge-version) -match '^claude-codex-bridge ') 'Normal alias failed'
     $env:CLAUDE_YOLO = 'previous'
     $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW = '12345'
-    Assert ((bridge-test-yolo --bridge-version) -match '0\.3\.0') 'YOLO alias failed'
+    Assert ((bridge-test-yolo --bridge-version) -match '^claude-codex-bridge ') 'YOLO alias failed'
     Assert ($env:CLAUDE_YOLO -eq 'previous' -and $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW -eq '12345') 'YOLO wrapper did not restore environment'
     Remove-Item Env:CLAUDE_YOLO, Env:CLAUDE_CODE_AUTO_COMPACT_WINDOW
     $null = bridge-test-yolo --bridge-version

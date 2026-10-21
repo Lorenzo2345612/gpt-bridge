@@ -17,7 +17,8 @@ Para compilar requiere Go 1.23 o posterior; para instalar un binario ya compilad
 se admite `install.sh --binary RUTA` o `install.ps1 -Binary RUTA`.
 Las dependencias de TOML y procesos de Windows están fijadas en `go.mod`
 y verificadas mediante `go.sum`.
-Implementado y probado con Codex 0.163.0 y Claude Code 2.1.304.
+Implementado con Codex 0.163.0 y Claude Code 2.1.304; la ruta WebSearch
+se verificó también con Claude Code 2.1.306.
 
 En Linux y macOS (Bash/zsh):
 
@@ -186,8 +187,24 @@ su estado de error; no se convierten en aprobaciones.
 Los turnos del modelo usan `externalSandbox`: los permisos de ejecución los
 controla Claude Code, incluidas sus restricciones y confirmaciones normales o
 `--dangerously-skip-permissions` si el usuario lo selecciona. Las herramientas
-internas de Codex permanecen deshabilitadas. El modo `read-only` interno no debe
+internas de Codex permanecen deshabilitadas en la conversación principal. El modo `read-only` interno no debe
 presentarse al modelo como una prohibición de usar Write/Bash externos.
+
+`WebSearch` de Claude Code hace una segunda petición al proveedor con la
+herramienta de servidor `web_search_20250305`. El puente reconoce esa petición
+auxiliar y habilita la búsqueda nativa de Codex únicamente para ella, usando la
+misma suscripción. Devuelve un resumen con enlaces Markdown que Claude incorpora
+al resultado de `WebSearch`; no fabrica bloques cifrados de Anthropic ni ofrece
+sus citas o contadores de búsqueda como equivalentes. Exige que Codex emita un
+evento real de búsqueda para considerar exitosa la petición.
+
+Se admite `allowed_domains` mediante el filtro nativo. `blocked_domains` y
+`user_location` producen un error explícito porque esta ruta no ofrece una
+equivalencia verificada. La traducción está limitada a la petición auxiliar de
+Claude: una sola herramienta de servidor de búsqueda, sin mezclar herramientas
+personalizadas. `max_uses` de Anthropic no es un límite estricto equivalente en
+Codex. La conversación principal sigue llamando a `WebSearch` con los permisos
+y hooks de Claude.
 
 Los bloques `tool_addition` y `tool_removal` de los mensajes del sistema se
 resuelven en orden: se registran solo las herramientas actualmente disponibles.
@@ -270,7 +287,8 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
 - `max_tokens`, `temperature`, `top_p` y el presupuesto de thinking de Anthropic
   no tienen equivalencia exacta en este transporte y no se aplican. El esfuerzo
   se controla con `/effort` o `--effort`; no se expone razonamiento privado como thinking.
-- Se rechazan explícitamente herramientas de servidor Anthropic, prefilling,
+- Se rechazan herramientas de servidor Anthropic excepto la petición auxiliar
+  de `WebSearch` descrita arriba, además de prefilling,
   `tool_choice` forzado, stop sequences y formatos de salida estructurada.
   No se promete compatibilidad con todas las funciones exclusivas de Claude.
 - Los MCP configurados localmente siguen en Claude. Los conectores alojados de
@@ -286,6 +304,7 @@ claude-codex --check
 # Opcional, consume uso de la suscripción:
 python3 smoke_go.py
 python3 smoke_question.py --delay 65
+python3 smoke_search.py
 ```
 
 Prueba manual del cliente real:
