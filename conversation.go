@@ -28,12 +28,20 @@ type conversation struct {
 	usage                 M
 	actualContextWindow   int
 	search                bool
+	allowed               map[string]bool
+	currentContext        M
+	contextHash           string
+	contextChanged        bool
+	model                 string
+	contextWindow         int
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
 	config := M{"project_doc_max_bytes": 0, "web_search": "disabled"}
-	instructions := hostInstructions + p.System
+	instructions := hostInstructions + dispatcherInstructions
+	specs := dispatcherSpecs()
 	if p.Search != nil {
+		specs = []any{}
 		config["web_search"] = "live"
 		searchConfig := M{"context_size": "medium"}
 		if domains := array(p.Search["allowed_domains"]); len(domains) > 0 {
@@ -50,7 +58,7 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 		config["model_context_window"] = p.ContextWindow
 		config["model_auto_compact_token_limit"] = p.EffectiveContextWindow
 	}
-	result, e := rpc.Call(ctx, "thread/start", M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": true, "environments": []any{}, "dynamicTools": p.Specs, "config": config})
+	result, e := rpc.Call(ctx, "thread/start", M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": true, "environments": []any{}, "dynamicTools": specs, "config": config})
 	if e != nil {
 		rpc.Close()
 		return nil, e
@@ -60,9 +68,16 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 		rpc.Close()
 		return nil, upstream("Codex returned an invalid thread")
 	}
-	return &conversation{hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}, nil
+	c := &conversation{contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
+	if !c.search {
+		c.updateHost(p)
+	}
+	return c, nil
 }
 func (c *conversation) advance(ctx context.Context, p *prepared) error {
+	if !c.search {
+		c.updateHost(p)
+	}
 	if len(c.pending) > 0 {
 		last := object(p.Messages[len(p.Messages)-1])
 		results := map[string]M{}
@@ -103,7 +118,13 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 				extras = append(extras, M{"type": "text", "text": "Latest human reply from AskUserQuestion (including any refusal or cancellation):\n" + string(encode(value)) + "\nUse this as the current user decision. Continue from the answers given; do not repeat questions already answered. Respect refusals, cancellations and any limits on the authorization."})
 			}
 		}
-		if len(extras) > 0 {
+		if c.model != p.Model {
+			return bad("Finish the pending tool before changing models")
+		}
+		if len(extras) > 0 || c.contextChanged {
+			if len(extras) == 0 {
+				extras = append(extras, M{"type": "text", "text": "The host configuration has been updated. Continue with the pending tool result using the current instructions and tool catalog."})
+			}
 			inputs, e := transcriptInput([]any{M{"role": "user", "content": extras}})
 			if e != nil {
 				return e
@@ -111,7 +132,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 			if inputChars(inputs) > maxTurnChars {
 				return bad("Host steering exceeds Codex's character limit; compact the conversation before continuing")
 			}
-			if _, e = c.rpc.Call(ctx, "turn/steer", M{"threadId": c.threadID, "expectedTurnId": c.pending[0].TurnID, "input": inputs}); e != nil {
+			if _, e = c.rpc.Call(ctx, "turn/steer", M{"threadId": c.threadID, "expectedTurnId": c.pending[0].TurnID, "input": inputs, "additionalContext": c.currentContext}); e != nil {
 				return e
 			}
 		}
@@ -121,6 +142,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 			}
 		}
 		c.pending = nil
+		c.contextSent()
 		return nil
 	}
 	messages := p.Messages
@@ -137,11 +159,18 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		}
 		inputs = []any{M{"type": "text", "text": "Continue the Claude Code conversation provided immediately above. Respond to its latest user message. Do not repeat historical tool calls."}}
 	}
-	params := M{"threadId": c.threadID, "input": inputs, "sandboxPolicy": M{"type": "externalSandbox", "networkAccess": "enabled"}}
+	params := M{"threadId": c.threadID, "input": inputs, "model": p.Model, "sandboxPolicy": M{"type": "externalSandbox", "networkAccess": "enabled"}}
+	if !c.search {
+		params["additionalContext"] = c.currentContext
+	}
 	if c.effort != "" {
 		params["effort"] = c.effort
 	}
 	_, e = c.rpc.Call(ctx, "turn/start", params)
+	if e == nil {
+		c.model = p.Model
+		c.contextSent()
+	}
 	return e
 }
 
@@ -180,9 +209,6 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 					return upstream("Unexpected Codex request: %s", method)
 				}
 				name := c.names[str(p["tool"])]
-				if name == "" {
-					return upstream("Codex requested an unknown host tool")
-				}
 				args := p["arguments"]
 				if s, ok := args.(string); ok {
 					var parsed any
@@ -193,6 +219,17 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				}
 				if object(args) == nil {
 					return upstream("Codex tool arguments were not an object")
+				}
+				if str(p["tool"]) == dispatcherName {
+					invocation := object(args)
+					name = str(invocation["name"])
+					args = invocation["arguments"]
+					if !c.allowed[name] || object(args) == nil {
+						return upstream("Codex requested an unavailable host tool or invalid arguments")
+					}
+				}
+				if name == "" {
+					return upstream("Codex requested an unknown host tool")
 				}
 				publicID := uid("toolu_")
 				c.pending = append(c.pending, pendingTool{RPCID: id, PublicID: publicID, TurnID: str(p["turnId"]), Name: name})
@@ -266,8 +303,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 
 type backendFactory func(context.Context, []string, string, time.Duration) (backend, error)
 type cachedResponse struct {
-	key  string
-	data []byte
+	key           string
+	data          []byte
+	pendingThread string
 }
 type Bridge struct {
 	mu                         sync.Mutex
@@ -341,13 +379,54 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 	defer b.mu.Unlock()
 	for _, cached := range b.cache {
 		if cached.key == requestKey {
+			if cached.pendingThread != "" {
+				valid := false
+				for _, owner := range b.sessions {
+					if owner.threadID != cached.pendingThread || !owner.mu.TryLock() {
+						continue
+					}
+					valid = len(owner.pending) > 0 && len(owner.expected) == len(p.Hashes)+1 && prefixMatches(owner.expected, p.Hashes)
+					owner.mu.Unlock()
+					if valid {
+						break
+					}
+				}
+				if !valid {
+					continue
+				}
+			}
 			return nil, p, requestKey, cached.data, nil
 		}
 	}
 	for _, c := range b.sessions {
-		if c.key == key && prefixMatches(p.Hashes, c.expected) {
+		compatible := c.key == key || (p.HostIdentity != "" && c.hostIdentity == p.HostIdentity && !c.search && p.Search == nil && c.contextWindow == p.ContextWindow)
+		if compatible && prefixMatches(p.Hashes, c.expected) {
 			if !c.mu.TryLock() {
 				return nil, nil, "", nil, &bridgeError{409, "This conversation already has a request in flight"}
+			}
+			if len(c.pending) > 0 && c.key != key {
+				results := map[string]bool{}
+				for _, v := range array(object(p.Messages[len(p.Messages)-1])["content"]) {
+					m := object(v)
+					if m["type"] == "tool_result" {
+						results[str(m["tool_use_id"])] = true
+					}
+				}
+				complete := true
+				for _, pending := range c.pending {
+					if !results[pending.PublicID] {
+						complete = false
+						break
+					}
+				}
+				if !complete {
+					c.mu.Unlock()
+					continue
+				}
+			}
+			if len(c.pending) > 0 && c.model != p.Model {
+				c.mu.Unlock()
+				return nil, nil, "", nil, bad("Finish the pending tool before changing models")
 			}
 			b.trace("reuse", c, "history_matches")
 			return c, p, requestKey, nil, nil
@@ -461,7 +540,11 @@ func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) {
 	if len(raw) > maxCacheBytes {
 		return
 	}
-	b.cache = append(b.cache, cachedResponse{key, raw})
+	pendingThread := ""
+	if response["stop_reason"] == "tool_use" {
+		pendingThread = c.threadID
+	}
+	b.cache = append(b.cache, cachedResponse{key: key, data: raw, pendingThread: pendingThread})
 	b.cacheBytes += len(raw)
 	for len(b.cache) > 128 || b.cacheBytes > maxCacheBytes {
 		b.cacheBytes -= len(b.cache[0].data)
@@ -477,6 +560,10 @@ func (b *Bridge) discard(c *conversation) {
 func (b *Bridge) reapLocked(before time.Time) {
 	for i := 0; i < len(b.sessions); {
 		c := b.sessions[i]
+		if c.hostIdentity != "" && !c.search {
+			i++
+			continue
+		}
 		if c.lastUsed.Before(before) && c.mu.TryLock() {
 			b.sessions = append(b.sessions[:i], b.sessions[i+1:]...)
 			c.rpc.Close()

@@ -83,10 +83,19 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 		}
 		return M{"thread": M{"id": "test-thread"}}, nil
 	case "turn/start":
-		if f.tool != "" {
+		var active []any
+		if f.tool == dispatcherName {
+			_ = decode([]byte(contextText(object(p["additionalContext"]), "tools")), &active)
+		}
+		if f.tool != "" && (f.tool != dispatcherName || len(active) > 0) {
 			f.received = 0
 			for i := 0; i < f.toolsPerTurn; i++ {
-				f.events <- M{"id": i + 1, "method": "item/tool/call", "params": M{"tool": f.tool, "arguments": M{"skill": "my-skill"}, "turnId": "t1"}}
+				f.events <- M{"id": i + 1, "method": "item/tool/call", "params": M{"tool": f.tool, "arguments": func() M {
+					if f.tool == dispatcherName {
+						return M{"name": object(active[0])["name"], "arguments": M{"skill": "my-skill"}}
+					}
+					return M{"skill": "my-skill"}
+				}(), "turnId": "t1"}}
 			}
 		} else {
 			f.finishLocked()

@@ -223,18 +223,32 @@ herramientas con texto/imágenes. No registra prompts ni credenciales.
 El runtime Go conserva huellas del historial para reutilizar conversaciones,
 en lugar de otra copia completa de cada historial. El caché local de respuestas
 está limitado a 128 entradas y 64 MiB. Un recolector cierra conversaciones sin
-peticiones activas tras 30 minutos, aunque no llegue otra petición. El número
+identidad de sesión y búsquedas auxiliares tras 30 minutos sin actividad.
+Las conversaciones identificadas de Claude se mantienen mientras el puente siga
+abierto, incluso si pasan más de 30 minutos entre mensajes. El número
 de procesos de conversación no tiene un máximo por defecto. Puedes fijarlo con
 `--max-sessions N`; `--max-sessions 0` significa sin límite.
 Cada proceso nativo de Codex conserva su propio consumo de memoria.
 
-La reutilización exige la misma identidad `metadata.user_id`, configuración y
-prefijo del historial. El ID de sesión de Claude y el ID nativo del thread de
-Codex son distintos: una reanudación o cambio de instrucciones puede reconstruir
-el historial íntegro en un thread nuevo. Si una petición de la misma rama
-responde todas las herramientas pendientes y cambia la configuración, el puente
-cierra la conversación sustituida para que no siga esperando indefinidamente.
-No cierra ramas ocupadas, herramientas sin responder ni sesiones con otra identidad.
+La identidad `metadata.user_id` de Claude y la continuidad del historial fijan
+la rama. Los turnos normales, cambios de instrucciones, altas/bajas de herramientas
+y cambios de modelo entre turnos reutilizan su mismo thread nativo. Claude y
+Codex mantienen IDs distintos; el puente conserva la asociación mientras está
+abierto y mantiene las ramas de subagentes y búsquedas separadas.
+
+El transporte registra una única herramienta estable, `cc_dispatch`. El catálogo
+actual con los nombres y esquemas originales de Claude y sus instrucciones se
+envía como contexto de aplicación con rol developer. Cada bloque se limita a
+768 bytes UTF-8, por debajo del truncado nativo de 1.000 tokens por valor. El
+manifiesto indica cuántos bloques forman la configuración vigente. Los cambios
+llegan mediante `turn/start` o `turn/steer` antes de devolver el resultado de una
+herramienta pendiente. Claude sigue validando y ejecutando las herramientas.
+
+Las sesiones anónimas conservan la comprobación estricta anterior. Reiniciar el
+puente, compactar/reemplazar el historial, cambiar la ventana nativa o perder el
+proceso de Codex puede requerir reconstrucción; no se promete persistencia del
+thread entre ejecuciones. Un máximo de sesiones configurado explícitamente puede
+expulsar conversaciones libres para admitir otras.
 
 Para comprobar la reutilización en una ejecución concreta:
 
@@ -296,8 +310,10 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
   Conserva el texto íntegro; no recupera razonamiento interno ni convierte las
   llamadas históricas en herramientas ejecutables.
 - Las sesiones vivas conservan el turno nativo entre llamada y resultado de una
-  herramienta. Un cambio de instrucciones, modelo o herramientas puede reconstruir
-  el contexto. Las llamadas concurrentes que llegan juntas se devuelven como
+  herramienta. Las instrucciones y el catálogo se actualizan en el mismo thread;
+  cambiar de modelo entre turnos también lo conserva. Cambiar de modelo con una
+  herramienta pendiente requiere terminarla primero. Las llamadas concurrentes
+  que llegan juntas se devuelven como
   varios bloques `tool_use`, conservando la relación de cada resultado con su llamada.
 - El contexto se obtiene del catálogo local de Codex: actualmente máximo nativo
   de 872.000 tokens y ventana efectiva de 828.400 (reserva del 5%). Claude recibe
@@ -318,8 +334,10 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
 - Sin límite de conversaciones por defecto en el puente. `--max-sessions N` fija
   un máximo por lanzador; `0` desactiva ese máximo. Los límites de la cuenta
   de Codex y los recursos del equipo siguen aplicándose;
-  las inactivas caducan a los 30
-  minutos mediante el recolector periódico. Reiniciar no borra sesiones de Claude.
+  las búsquedas auxiliares y conversaciones anónimas inactivas caducan a los
+  30 minutos. Las conversaciones identificadas duran hasta cerrar el puente
+  o una expulsión explícita por el máximo configurado. Reiniciar no borra
+  sesiones de Claude.
 
 ## Verificación manual
 
@@ -330,6 +348,7 @@ python3 smoke_go.py
 python3 smoke_question.py --delay 65
 python3 smoke_search.py
 python3 smoke_reuse.py
+python3 smoke_stable_context.py
 ```
 
 Prueba manual del cliente real:
