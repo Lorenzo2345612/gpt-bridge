@@ -46,6 +46,21 @@ Escucha exclusivamente en loopback y no publica prompts, respuestas, líneas de
 comandos ni credenciales. No requiere Python, otro servidor web ni una instalación
 de SQLite; el lector SQLite está incluido en el ejecutable.
 
+Desde 0.6.1, **Ver evidencia** muestra para cada thread el archivo SQLite, la
+fila, el campo `model`, el PID y la muestra que confirma una respuesta. La sección
+**Tokens registrados** permite elegir hoy o el historial disponible y desglosa
+entrada sin caché, caché, salida y razonamiento por modelo. La atribución de tokens
+usa el `turn_context.model` de cada evento, no el modelo actual de la conversación.
+
+Los desgloses proceden de eventos `token_count` en los rollouts JSONL localizados
+por el índice `state_5.sqlite`. El lector es incremental, calcula diferencias entre
+contadores acumulados y descarta actualizaciones repetidas. Un thread reanudado en
+varios procesos se suma una sola vez. El detalle por thread abarca todo su historial,
+no solo el proceso actual. Caché y razonamiento son subconjuntos de entrada y salida:
+el total es entrada + salida. El día se delimita con la zona horaria del servidor,
+indicada junto al resumen. Se muestra cuántos threads tienen desglose recuperable;
+los temporales antiguos pueden no tenerlo. Las cifras no equivalen a cuota del plan.
+
 ## Instalación y uso
 
 El runtime es un ejecutable nativo en **Go**, sin Python ni dependencias de

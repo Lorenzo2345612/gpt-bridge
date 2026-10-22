@@ -40,21 +40,25 @@ type monitorProcess struct {
 }
 
 type monitorThread struct {
-	ID             string    `json:"id"`
-	PID            int       `json:"pid"`
-	ProcessUUID    string    `json:"-"`
-	Model          string    `json:"model"`
-	Effort         string    `json:"effort,omitempty"`
-	Evidence       string    `json:"evidence"`
-	LastSeen       time.Time `json:"last_seen"`
-	LastSample     time.Time `json:"last_sample,omitempty"`
-	ContextTokens  int64     `json:"context_tokens,omitempty"`
-	SamplingEvents int       `json:"sampling_events"`
-	ModelChanges   int       `json:"model_changes"`
-	BridgeVersion  string    `json:"bridge_version,omitempty"`
-	CodexHome      string    `json:"codex_home"`
-	BridgePID      int       `json:"bridge_pid,omitempty"`
-	Alive          bool      `json:"alive"`
+	ID             string              `json:"id"`
+	PID            int                 `json:"pid"`
+	ProcessUUID    string              `json:"-"`
+	Model          string              `json:"model"`
+	Effort         string              `json:"effort,omitempty"`
+	Evidence       string              `json:"evidence"`
+	LastSeen       time.Time           `json:"last_seen"`
+	LastSample     time.Time           `json:"last_sample,omitempty"`
+	ContextTokens  int64               `json:"context_tokens,omitempty"`
+	SamplingEvents int                 `json:"sampling_events"`
+	ModelChanges   int                 `json:"model_changes"`
+	BridgeVersion  string              `json:"bridge_version,omitempty"`
+	CodexHome      string              `json:"codex_home"`
+	BridgePID      int                 `json:"bridge_pid,omitempty"`
+	Alive          bool                `json:"alive"`
+	LogID          int64               `json:"log_id"`
+	LogTarget      string              `json:"log_target"`
+	SampleLogID    int64               `json:"sample_log_id,omitempty"`
+	Usage          *monitorThreadUsage `json:"usage,omitempty"`
 }
 
 type monitorRoot struct {
@@ -82,13 +86,14 @@ type monitorSource struct {
 }
 
 type monitorSnapshot struct {
-	Version   string          `json:"version"`
-	At        time.Time       `json:"at"`
-	Processes []monitorRoot   `json:"processes"`
-	Threads   []monitorThread `json:"threads"`
-	Events    []monitorEvent  `json:"events"`
-	Sources   []monitorSource `json:"sources"`
-	Warnings  []string        `json:"warnings"`
+	Version   string              `json:"version"`
+	At        time.Time           `json:"at"`
+	Processes []monitorRoot       `json:"processes"`
+	Threads   []monitorThread     `json:"threads"`
+	Events    []monitorEvent      `json:"events"`
+	Sources   []monitorSource     `json:"sources"`
+	Warnings  []string            `json:"warnings"`
+	Usage     monitorUsageSummary `json:"usage"`
 }
 
 type codexLogReader struct {
@@ -100,10 +105,11 @@ type codexLogReader struct {
 }
 
 type bridgeMonitor struct {
-	mu       sync.RWMutex
-	snapshot []byte
-	readers  map[string]*codexLogReader
-	events   []monitorEvent
+	mu         sync.RWMutex
+	snapshot   []byte
+	readers    map[string]*codexLogReader
+	events     []monitorEvent
+	usageFiles map[string]*monitorRollout
 }
 
 var monitorTurn = regexp.MustCompile(`:turn\{[^}]*\bthread\.id=([0-9a-f-]{36})[^}]*\bmodel=([a-zA-Z0-9_.-]+)(?: codex\.turn\.reasoning_effort=([a-zA-Z0-9_-]+))?`)
@@ -199,6 +205,11 @@ func (r *codexLogReader) update(ctx context.Context, add func(monitorEvent)) err
 		if n == nil {
 			continue
 		}
+		n.LogID = id
+		n.LogTarget = target
+		if n.SamplingEvents > 0 {
+			n.SampleLogID = id
+		}
 		key := process + ":" + n.ID
 		prev := r.threads[key]
 		if prev == nil {
@@ -211,15 +222,19 @@ func (r *codexLogReader) update(ctx context.Context, add func(monitorEvent)) err
 				prev.ContextTokens = 0
 				prev.Evidence = "request"
 				prev.LastSample = time.Time{}
+				prev.SampleLogID = 0
 				add(monitorEvent{n.LastSeen, n.ID, n.PID, n.Model, "model_change"})
 			}
 			prev.LastSeen = n.LastSeen
+			prev.LogID = n.LogID
+			prev.LogTarget = n.LogTarget
 			prev.Effort = n.Effort
 			if n.SamplingEvents > 0 {
 				prev.ContextTokens = n.ContextTokens
 				prev.LastSample = n.LastSample
 				prev.SamplingEvents++
 				prev.Evidence = "sample"
+				prev.SampleLogID = n.SampleLogID
 			}
 		}
 	}
@@ -321,6 +336,7 @@ func (m *bridgeMonitor) refresh(ctx context.Context) {
 			}
 		}
 	}
+	m.updateUsage(ctx, &s, roots)
 	for _, r := range roots {
 		sort.Slice(r.Threads, func(i, j int) bool { return r.Threads[i].LastSeen.After(r.Threads[j].LastSeen) })
 		sort.Slice(r.Children, func(i, j int) bool { return r.Children[i].PID < r.Children[j].PID })
