@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.2"
+const bridgeVersion = "0.6.3"
 
 type options struct {
 	serve, check, models, version      bool
@@ -323,13 +323,17 @@ func run(args []string) (exitCode int, runError error) {
 	}
 	defer os.RemoveAll(temporary)
 	settingsPath := filepath.Join(temporary, "settings.json")
-	if e = os.WriteFile(settingsPath, encode(M{"env": overrides, "model": model, "modelPicker": modelPicker(catalog)}), 0600); e != nil {
+	settings, hostArgs, e := mergedHostSettings(opts.claudeArgs, M{"env": overrides, "model": model, "modelPicker": modelPicker(catalog)})
+	if e != nil {
+		return 1, e
+	}
+	if e = os.WriteFile(settingsPath, encode(settings), 0600); e != nil {
 		return 1, e
 	}
 	profile := filepath.Join(claudeConfig(), "settings.json")
 	original := readSettings(profile)
 	fmt.Fprintf(os.Stderr, "claude-codex: %s · ChatGPT subscription · %s · Go\n", model, claudeConfig())
-	claudeArgs := append([]string{"--settings", settingsPath, "--agents", string(encode(modelAgents(catalog)))}, opts.claudeArgs...)
+	claudeArgs := append([]string{"--settings", settingsPath, "--agents", string(encode(modelAgents(catalog)))}, hostArgs...)
 	child, e := platformCommand(claude, claudeArgs...)
 	if e != nil {
 		return 1, e

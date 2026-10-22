@@ -159,8 +159,10 @@ fusiona únicamente los ajustes de proveedor/modelo con tu configuración;
 no sustituye tus hooks ni permisos. Si Claude guarda un modelo GPT en el perfil
 compartido, al cerrar normalmente el puente restaura el modelo previo, conservando
 los demás ajustes y cualquier selección concurrente de un modelo nativo.
-No añadas otro `--settings` con ajustes
-de proveedor contradictorios. Los agentes que ya tenías instalados siguen
+Desde 0.6.3, los `--settings` adicionales (archivos o JSON inline, como los hooks
+de Claude Workspaces) se fusionan en un único archivo. Los ajustes de conexión y
+modelo del puente tienen prioridad; los hooks y permisos se conservan.
+Los agentes que ya tenías instalados siguen
 cargándose. Los subagentes sin modelo explícito heredan el modelo actual de
 la conversación; no se fuerza un modelo global sobre todos ellos.
 
