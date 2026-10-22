@@ -176,3 +176,32 @@ func TestJournalCompactionIgnoresSyntheticOwnershipAnchors(t *testing.T) {
 		})
 	}
 }
+
+func TestJournalLineageSurvivesProviderSwitchAndRepeatedCompaction(t *testing.T) {
+	real := M{"role": "assistant", "content": []any{M{"type": "text", "text": "Unique native branch reply"}}}
+	canonical, _ := canonicalMessages([]any{real})
+	candidates := []compactionCandidate{{"actual-thread", []string{hash(canonical[0])}}, {"older-thread", []string{"older-hash"}}}
+	rows := []M{{"type": "assistant", "message": real}}
+	var latest M
+	for boundary := 0; boundary < 3; boundary++ {
+		for i := 0; i < 90; i++ {
+			rows = append(rows, M{"type": "assistant", "message": M{"role": "assistant", "model": "other-provider", "content": []any{M{"type": "text", "text": "Unmatched provider output"}}}})
+		}
+		latest = M{"role": "user", "content": "This session is being continued from a previous conversation. Summary: " + string(rune('a'+boundary))}
+		rows = append(rows, M{"type": "system", "subtype": "compact_boundary"}, M{"type": "user", "isCompactSummary": true, "message": latest})
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	var raw []byte
+	for _, row := range rows {
+		raw = append(raw, encode(row)...)
+		raw = append(raw, '\n')
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &prepared{CompactHash: compactionHash([]any{latest})}
+	id, matched := journalCompactionOwner(path, p, candidates)
+	if !matched || id != "actual-thread" {
+		t.Fatal("lost proven lineage across compactions", id, matched)
+	}
+}

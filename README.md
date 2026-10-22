@@ -183,6 +183,10 @@ de Codex no sigue creciendo detrás del resumen ni provoca nuevas compactaciones
 inmediatas por sus cifras de uso. Una reescritura del historial sin un resumen
 nuevo no vuelve a compactar Codex.
 
+Desde 0.6.7, la identificación del hilo conserva las referencias verificadas a
+través de compactaciones sucesivas y cambios temporales de proveedor. Los mensajes
+que no coinciden con ningún hilo guardado no desplazan esas referencias del búfer.
+
 ```bash
 claude-codex --check
 claude-codex --models

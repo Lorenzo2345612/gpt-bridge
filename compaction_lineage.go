@@ -86,6 +86,12 @@ func journalCompactionOwner(path string, p *prepared, candidates []compactionCan
 	// subagent journals are separate files. Physical order remains usable when
 	// logicalParentUuid refers to an attachment Claude did not persist.
 	anchors := []string{}
+	known := map[string]bool{}
+	for _, candidate := range candidates {
+		for _, h := range candidate.Hashes {
+			known[h] = true
+		}
+	}
 	var beforeBoundary []string
 	owner := ""
 	found := false
@@ -102,7 +108,9 @@ func journalCompactionOwner(path string, p *prepared, candidates []compactionCan
 		}
 		if record.Type == "system" && record.Subtype == "compact_boundary" {
 			beforeBoundary = append([]string{}, anchors...)
-			anchors = nil
+			// A session may compact repeatedly while using another provider or
+			// while retries fail. Carry its last native anchors across those
+			// boundaries until newer native output supplies different evidence.
 			continue
 		}
 		if len(record.Message) == 0 {
@@ -128,7 +136,11 @@ func journalCompactionOwner(path string, p *prepared, candidates []compactionCan
 		if err != nil {
 			continue
 		}
-		anchors = append(anchors, hash(canonical[0]))
+		h := hash(canonical[0])
+		if !known[h] {
+			continue
+		}
+		anchors = append(anchors, h)
 		if len(anchors) > 64 {
 			anchors = anchors[len(anchors)-64:]
 		}
