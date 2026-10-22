@@ -213,15 +213,31 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 		if owned[states[i].ThreadID] {
 			continue
 		}
+		if p.CompactionThread != "" {
+			if states[i].ThreadID == p.CompactionThread {
+				selected = &states[i]
+				break
+			}
+			continue
+		}
 		if value := checkpointScore(states[i], p); value > score {
 			selected = &states[i]
 			score = value
 		}
 	}
+	if p.CompactionThread != "" && selected == nil {
+		return nil, false, &bridgeError{409, "The compacted conversation's native thread is unavailable; its history was preserved"}
+	}
+	newCompaction := p.CompactHash != ""
+	for _, state := range states {
+		if state.CompactHash == p.CompactHash {
+			newCompaction = false
+		}
+	}
 	// On a fresh bridge, Claude's explicit session UUID identifies its primary
 	// thread even if replay changes old host-message wrappers. Live forks are
 	// still matched by history and may never take over a parent's active thread.
-	if selected == nil && p.NamedSession {
+	if selected == nil && p.NamedSession && (!newCompaction || len(states) <= 1) {
 		livePrimary := false
 		for _, live := range b.sessions {
 			if live.hostIdentity == p.HostIdentity && live.primary {
@@ -235,12 +251,6 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 					break
 				}
 			}
-		}
-	}
-	newCompaction := p.CompactHash != ""
-	for _, state := range states {
-		if state.CompactHash == p.CompactHash {
-			newCompaction = false
 		}
 	}
 	if selected == nil && newCompaction {

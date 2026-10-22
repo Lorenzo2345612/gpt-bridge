@@ -61,6 +61,14 @@ el total es entrada + salida. El día se delimita con la zona horaria del servid
 indicada junto al resumen. Se muestra cuántos threads tienen desglose recuperable;
 los temporales antiguos pueden no tenerlo. Las cifras no equivalen a cuota del plan.
 
+Desde 0.6.2, una compactación con varias ramas del mismo chat se identifica por
+mensajes conservados o por el historial de Claude: se cruza el resumen exacto con
+su `compact_boundary` y las huellas de las respuestas anteriores. La lectura es
+local y no modifica el historial. Esto permite recuperar el thread correcto,
+aunque no sea el principal, incluso después de reiniciar el puente. No se elige
+una rama solo porque comparta las mismas instrucciones. Si no hay evidencia
+suficiente, el puente conserva los threads y devuelve un error de ambigüedad.
+
 ## Instalación y uso
 
 El runtime es un ejecutable nativo en **Go**, sin Python ni dependencias de

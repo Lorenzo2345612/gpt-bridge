@@ -477,6 +477,8 @@ type prepared struct {
 	CompactHash                           string
 	BaseSystemHash                        string
 	NamedSession                          bool
+	ClaudeSessionID, ClaudeAgentID        string
+	CompactionThread                      string
 	System, Model, Effort                 string
 	Specs                                 []any
 	Names                                 map[string]string
@@ -591,5 +593,6 @@ func prepare(body M, def string, aliases map[string]string) (*prepared, error) {
 	if value := str(object(body["metadata"])["user_id"]); value != "" {
 		identity = hostIdentity(value)
 	}
-	return &prepared{NamedSession: namedClaudeSession(str(object(body["metadata"])["user_id"])), Auxiliary: compactionRequest(messages), BaseSystemHash: baseSystemHash, CompactHash: compactionHash(messages), HostIdentity: identity, Search: search, System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
+	sessionID, agentID := claudeSessionParts(str(object(body["metadata"])["user_id"]))
+	return &prepared{ClaudeSessionID: sessionID, ClaudeAgentID: agentID, NamedSession: namedClaudeSession(str(object(body["metadata"])["user_id"])), Auxiliary: compactionRequest(messages), BaseSystemHash: baseSystemHash, CompactHash: compactionHash(messages), HostIdentity: identity, Search: search, System: system, Model: model, Effort: effort, Specs: specs, Names: names, Messages: messages, Hashes: hashes}, nil
 }

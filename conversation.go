@@ -534,7 +534,27 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		if !newCompaction {
 			candidates = nil
 		}
-		if newCompaction && len(candidates) == 0 && identityCount == 1 && only.compactHash != p.CompactHash {
+		if newCompaction {
+			id, err := b.identifyCompaction(p)
+			if err != nil {
+				return nil, nil, "", nil, err
+			}
+			p.CompactionThread = id
+			if id != "" {
+				candidates = nil
+				for _, c := range b.sessions {
+					if c.threadID == id {
+						if !c.mu.TryLock() {
+							return nil, nil, "", nil, &bridgeError{409, "This conversation already has a request in flight"}
+						}
+						c.resetHistory = true
+						b.trace("compact", c, "host_compaction_lineage_matched")
+						return c, p, requestKey, nil, nil
+					}
+				}
+			}
+		}
+		if p.CompactionThread == "" && newCompaction && len(candidates) == 0 && identityCount == 1 && only.compactHash != p.CompactHash {
 			candidates = append(candidates, only)
 		}
 		if len(candidates) > 1 {
