@@ -172,6 +172,11 @@ con el mismo historial enviado por Claude. Conserva el checkpoint huérfano con
 extensión `.missing-rollout`. No reemplaza hilos con respuestas confirmadas,
 herramientas pendientes o un historial diferente.
 
+Desde 0.6.5, la identificación del hilo tras compactar ignora las respuestas
+locales que Claude marca como `<synthetic>` (por ejemplo, `No response requested.`).
+Estos textos repetidos no identifican una rama; se utiliza la salida real previa
+del modelo y se mantiene el rechazo si esa evidencia también es ambigua.
+
 ```bash
 claude-codex --check
 claude-codex --models

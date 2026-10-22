@@ -132,3 +132,47 @@ func TestCompactionAnchorsDoNotBreakSharedHistoryTie(t *testing.T) {
 		t.Fatal("Used an older ancestor to guess ownership", id, matched)
 	}
 }
+
+func TestJournalCompactionIgnoresSyntheticOwnershipAnchors(t *testing.T) {
+	for _, tc := range []struct {
+		name, model string
+		sharedReal  bool
+		want        string
+	}{
+		{"synthetic-placeholder", "<synthetic>", false, "a"},
+		{"real-shared-output", "gpt-test-sol", false, ""},
+		{"synthetic-does-not-resolve-real-tie", "<synthetic>", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := M{"role": "assistant", "content": []any{M{"type": "text", "text": "Completed branch-specific work"}}}
+			placeholder := M{"role": "assistant", "model": tc.model, "content": []any{M{"type": "text", "text": "No response requested."}}}
+			canonical, _ := canonicalMessages([]any{actual, placeholder})
+			actualHash, placeholderHash := hash(canonical[0]), hash(canonical[1])
+			candidates := []compactionCandidate{{"a", []string{actualHash, placeholderHash}}, {"b", []string{placeholderHash}}}
+			if tc.sharedReal {
+				candidates[1].Hashes = append(candidates[1].Hashes, actualHash)
+			}
+			summary := M{"role": "user", "content": "This session is being continued from a previous conversation that ran out of context. Summary: completed work."}
+			p := &prepared{ClaudeSessionID: "synthetic-lineage", CompactHash: compactionHash([]any{summary})}
+			rows := []M{
+				{"type": "assistant", "message": actual},
+				{"type": "assistant", "message": placeholder},
+				{"type": "system", "subtype": "compact_boundary"},
+				{"type": "user", "isCompactSummary": true, "message": summary},
+			}
+			path := filepath.Join(t.TempDir(), "journal.jsonl")
+			var data []byte
+			for _, r := range rows {
+				data = append(data, encode(r)...)
+				data = append(data, '\n')
+			}
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			id, matched := journalCompactionOwner(path, p, candidates)
+			if !matched || id != tc.want {
+				t.Fatalf("owner=%q matched=%v, want %q", id, matched, tc.want)
+			}
+		})
+	}
+}

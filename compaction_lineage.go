@@ -118,6 +118,12 @@ func journalCompactionOwner(path string, p *prepared, candidates []compactionCan
 		if record.Type != "assistant" || message["role"] != "assistant" {
 			continue
 		}
+		// Claude inserts local placeholder replies (e.g. "No response
+		// requested.") in unrelated branches. They are not model output and
+		// cannot establish ownership of a native Codex conversation.
+		if str(message["model"]) == "<synthetic>" {
+			continue
+		}
 		canonical, err := canonicalMessages([]any{message})
 		if err != nil {
 			continue
