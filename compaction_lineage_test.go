@@ -205,3 +205,27 @@ func TestJournalLineageSurvivesProviderSwitchAndRepeatedCompaction(t *testing.T)
 		t.Fatal("lost proven lineage across compactions", id, matched)
 	}
 }
+
+func TestCompactionSummaryWhitespaceKeepsJournalIdentity(t *testing.T) {
+	summary := M{"role": "user", "content": "This session is being continued from a previous conversation. Summary: retained work."}
+	request := M{"role": "user", "content": str(summary["content"]) + "\n"}
+	if compactionHash([]any{summary}) != compactionHash([]any{request}) {
+		t.Fatal("trailing newline changed compaction identity")
+	}
+	canonical, _ := canonicalMessages([]any{M{"role": "assistant", "content": "Unique response"}})
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	rows := []M{{"type": "assistant", "message": canonical[0]}, {"type": "system", "subtype": "compact_boundary"}, {"type": "user", "isCompactSummary": true, "message": summary}}
+	var raw []byte
+	for _, r := range rows {
+		raw = append(raw, encode(r)...)
+		raw = append(raw, '\n')
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &prepared{CompactHash: compactionHash([]any{request})}
+	id, matched := journalCompactionOwner(path, p, []compactionCandidate{{"correct-thread", []string{hash(canonical[0])}}})
+	if !matched || id != "correct-thread" {
+		t.Fatal("request newline lost journal owner", id, matched)
+	}
+}

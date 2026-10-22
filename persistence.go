@@ -74,7 +74,7 @@ func compactionHash(messages []any) string {
 		for _, v := range bs {
 			b := object(v)
 			if b["type"] == "text" && strings.HasPrefix(strings.TrimSpace(str(b["text"])), "This session is being continued from a previous conversation") {
-				result = hash(b["text"])
+				result = hash(strings.TrimSpace(str(b["text"])))
 			}
 		}
 	}

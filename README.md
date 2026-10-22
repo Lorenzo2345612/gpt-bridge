@@ -187,6 +187,9 @@ Desde 0.6.7, la identificación del hilo conserva las referencias verificadas a
 través de compactaciones sucesivas y cambios temporales de proveedor. Los mensajes
 que no coinciden con ningún hilo guardado no desplazan esas referencias del búfer.
 
+Desde 0.6.8, los espacios y saltos de línea exteriores de un resumen no alteran
+su identidad de compactación; Claude puede añadir un salto de línea al enviarlo.
+
 ```bash
 claude-codex --check
 claude-codex --models
