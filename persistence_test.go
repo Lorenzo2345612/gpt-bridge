@@ -13,6 +13,49 @@ func persistentFixture(t *testing.T, dir string) *httpFixture {
 	f.b.stateDir = dir
 	return f
 }
+
+func TestPersistentForkDoesNotReacquireItsOwnParentLease(t *testing.T) {
+	f := persistentFixture(t, t.TempDir())
+	body := testRequest(true)
+	body["metadata"] = M{"user_id": `{"session_id":"parent-and-background-agent"}`}
+	status, response := f.post(t, body)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	parent := f.b.sessions[0]
+	branch := copyMap(body)
+	branch["system"] = "Background agent instructions"
+	branch["messages"] = append(append([]any{}, array(body["messages"])...), M{"role": "assistant", "content": response["content"]}, M{"role": "user", "content": "Independent background branch; the parent tool is still running"})
+	status, response = f.post(t, branch)
+	if status != 200 {
+		t.Fatal("A fork tried to lock a checkpoint owned by this bridge", status, response)
+	}
+	if len(f.b.sessions) != 2 || f.b.sessions[0] != parent || len(parent.pending) != 1 {
+		t.Fatal("Fork disturbed the live parent")
+	}
+}
+
+func TestPersistentPendingResultSurvivesHostHistoryRewrite(t *testing.T) {
+	f := persistentFixture(t, t.TempDir())
+	body := testRequest(true)
+	body["metadata"] = M{"user_id": `{"session_id":"rewritten-host-history"}`}
+	_, response := f.post(t, body)
+	id := f.b.sessions[0].threadID
+	tool := object(array(response["content"])[0])
+	// Claude can re-render an old wrapper when a background agent finishes.
+	body["messages"] = []any{M{"role": "user", "content": "Re-rendered original host wrapper"}, M{"role": "assistant", "content": response["content"]}, M{"role": "user", "content": []any{M{"type": "tool_result", "tool_use_id": tool["id"], "content": "completed once"}}}}
+	status, result := f.post(t, body)
+	if status != 200 || result["stop_reason"] != "end_turn" {
+		t.Fatal(status, result)
+	}
+	if len(f.b.sessions) != 1 || f.b.sessions[0].threadID != id {
+		t.Fatal("Lost the original live tool owner")
+	}
+	_, sent := f.rpc().snapshot()
+	if len(sent) != 1 {
+		t.Fatal("Tool result was not delivered exactly once", sent)
+	}
+}
 func continueRequest(body M, response M, text string) M {
 	next := copyMap(body)
 	next["messages"] = append(append([]any{}, array(body["messages"])...), M{"role": "assistant", "content": response["content"]}, M{"role": "user", "content": text})

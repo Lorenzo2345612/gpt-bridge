@@ -489,6 +489,31 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			return c, p, requestKey, nil, nil
 		}
 	}
+	// Background-agent completion can re-render earlier host messages. Native
+	// pending tool IDs still identify the live owner unambiguously even when
+	// the transcript prefix no longer matches. Deliver to that existing RPC,
+	// never try to reacquire its own persistent lease or replay the tool.
+	if p.HostIdentity != "" && p.Search == nil && !p.Auxiliary {
+		for _, c := range b.sessions {
+			if c.hostIdentity != p.HostIdentity || c.search || c.auxiliary || !c.mu.TryLock() {
+				continue
+			}
+			pending := make([]savedPending, 0, len(c.pending))
+			for _, v := range c.pending {
+				pending = append(pending, savedPending{PublicID: v.PublicID, Name: v.Name})
+			}
+			if !pendingAnswered(p, pending) {
+				c.mu.Unlock()
+				continue
+			}
+			if c.model != p.Model {
+				c.mu.Unlock()
+				return nil, nil, "", nil, bad("Finish the pending tool before changing models")
+			}
+			b.trace("reuse", c, "pending_tool_identifies_live_owner")
+			return c, p, requestKey, nil, nil
+		}
+	}
 	if p.HostIdentity != "" && p.CompactHash != "" && p.Search == nil && !p.Auxiliary {
 		candidates := []*conversation{}
 		newCompaction := true

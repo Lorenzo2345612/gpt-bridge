@@ -19,10 +19,11 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.5.0"
+const bridgeVersion = "0.6.0"
 
 type options struct {
 	serve, check, models, version      bool
+	dashboard                          bool
 	port, timeout, maxSessions, window int
 	model, effort, tokenFile           string
 	claudeArgs                         []string
@@ -38,6 +39,8 @@ func parseOptions(args []string) (options, error) {
 		}
 		name, value, inline := strings.Cut(arg, "=")
 		switch name {
+		case "--dashboard":
+			o.dashboard = true
 		case "--serve":
 			o.serve = true
 		case "--check":
@@ -147,6 +150,9 @@ func run(args []string) (exitCode int, runError error) {
 	if opts.version {
 		fmt.Printf("claude-codex-bridge %s (Go)\n", bridgeVersion)
 		return 0, nil
+	}
+	if opts.dashboard {
+		return runDashboard(opts.port)
 	}
 	binary, e := exec.LookPath("codex")
 	if e != nil {

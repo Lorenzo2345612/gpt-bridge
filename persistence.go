@@ -202,7 +202,17 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	}
 	var selected *sessionCheckpoint
 	score := 0
+	// Live conversations already own their leases. Their pending results are
+	// routed in acquire; a divergent background branch must open its own thread
+	// rather than attempting to resume a live parent's checkpoint.
+	owned := map[string]bool{}
+	for _, live := range b.sessions {
+		owned[live.threadID] = true
+	}
 	for i := range states {
+		if owned[states[i].ThreadID] {
+			continue
+		}
 		if value := checkpointScore(states[i], p); value > score {
 			selected = &states[i]
 			score = value
@@ -220,7 +230,7 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 		}
 		if !livePrimary {
 			for i := range states {
-				if states[i].Primary {
+				if states[i].Primary && !owned[states[i].ThreadID] {
 					selected = &states[i]
 					break
 				}
@@ -236,11 +246,11 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	if selected == nil && newCompaction {
 		candidates := []int{}
 		for i, state := range states {
-			if state.BaseSystemHash == p.BaseSystemHash {
+			if !owned[state.ThreadID] && state.BaseSystemHash == p.BaseSystemHash {
 				candidates = append(candidates, i)
 			}
 		}
-		if len(candidates) == 0 && len(states) == 1 {
+		if len(candidates) == 0 && len(states) == 1 && !owned[states[0].ThreadID] {
 			candidates = append(candidates, 0)
 		}
 		if len(candidates) > 1 || (len(candidates) == 0 && len(states) > 0) {

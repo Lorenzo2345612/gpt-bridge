@@ -8,6 +8,44 @@ Las skills, sesiones, memoria, hooks, permisos, plugins y herramientas MCP sigue
 siendo los de Claude Code. El puente no lee, copia ni renueva tokens de OpenAI:
 la autenticación queda en el CLI oficial de Codex.
 
+## Dashboard local de procesos
+
+Desde 0.6.0 puedes monitorear todos los puentes del usuario, incluidas sesiones
+abiertas con versiones anteriores, sin reiniciarlas:
+
+```bash
+claude-codex --dashboard
+# Abre http://127.0.0.1:8787
+claude-codex --dashboard --port 8790
+```
+
+No inicia Claude ni hace llamadas a modelos. Detecta procesos y descendientes en
+Linux/WSL, macOS y Windows, y consulta `CODEX_HOME/logs_2.sqlite` en solo lectura.
+Actualiza cada tres segundos; permite pausar, buscar por PID/carpeta/thread y
+filtrar por modelo. Muestra memoria RSS del árbol, backends de Codex, threads,
+nivel de razonamiento, cambios observados y cobertura temporal de los logs. En
+Linux descubre también los `CODEX_HOME` de los puentes activos; en macOS y Windows
+usa el `CODEX_HOME` del proceso del dashboard.
+
+El modelo procede de spans estructurados nativos de Codex, asociados al PID del
+app-server y a sus padres. No se extrae de prompts, respuestas o menciones de
+modelos. Distingue una solicitud observada de una respuesta registrada y nunca
+presenta el modelo del alias como evidencia de una inferencia. Los procesos sin
+registros muestran **Sin evidencia**. Una señal antigua no demuestra que el
+modelo siga generando: `Activo` describe la existencia del proceso. Se descartan
+asociaciones con PIDs reutilizados.
+
+Los tokens mostrados son el contexto de la última muestra publicada por Codex,
+no una suma de consumo. Las muestras/threads y las barras por modelo **no
+representan cuota ni porcentajes de uso de la suscripción**. Los registros pueden
+rotar; el monitor muestra la evidencia disponible. Carga el historial en lotes y
+después lee filas nuevas. Conserva hasta 300 threads visibles y 200 eventos en
+memoria, sin crear una segunda base de datos.
+
+Escucha exclusivamente en loopback y no publica prompts, respuestas, líneas de
+comandos ni credenciales. No requiere Python, otro servidor web ni una instalación
+de SQLite; el lector SQLite está incluido en el ejecutable.
+
 ## Instalación y uso
 
 El runtime es un ejecutable nativo en **Go**, sin Python ni dependencias de
@@ -15,7 +53,7 @@ runtime adicionales. Funciona en Linux, macOS y Windows; requiere Claude Code
 y Codex CLI en `PATH`, autenticado mediante `codex login`.
 Para compilar requiere Go 1.23 o posterior; para instalar un binario ya compilado
 se admite `install.sh --binary RUTA` o `install.ps1 -Binary RUTA`.
-Las dependencias de TOML y procesos de Windows están fijadas en `go.mod`
+Las dependencias de TOML, SQLite y procesos de Windows están fijadas en `go.mod`
 y verificadas mediante `go.sum`.
 Implementado con Codex 0.163.0 y Claude Code 2.1.304; la ruta WebSearch
 se verificó también con Claude Code 2.1.306.
