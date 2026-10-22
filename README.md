@@ -177,6 +177,12 @@ locales que Claude marca como `<synthetic>` (por ejemplo, `No response requested
 Estos textos repetidos no identifican una rama; se utiliza la salida real previa
 del modelo y se mantiene el rechazo si esa evidencia también es ambigua.
 
+Desde 0.6.6, una nueva compactación de Claude también dispara y espera la
+compactación nativa de Codex, conservando el mismo hilo. Así, el historial antiguo
+de Codex no sigue creciendo detrás del resumen ni provoca nuevas compactaciones
+inmediatas por sus cifras de uso. Una reescritura del historial sin un resumen
+nuevo no vuelve a compactar Codex.
+
 ```bash
 claude-codex --check
 claude-codex --models

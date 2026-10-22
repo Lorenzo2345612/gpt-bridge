@@ -104,7 +104,7 @@ func TestPersistentRestartAndCompactionKeepThread(t *testing.T) {
 	}
 	second.b.mu.Unlock()
 	calls, _ = second.rpc().snapshot()
-	if len(calls) != 3 || !strings.Contains(string(encode(calls[2].Params["input"])), "SAME conversation") {
+	if len(calls) != 4 || calls[2].Method != "thread/compact/start" || !strings.Contains(string(encode(calls[3].Params["input"])), "SAME conversation") {
 		t.Fatal(calls)
 	}
 	second.b.close()

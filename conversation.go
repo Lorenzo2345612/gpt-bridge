@@ -110,6 +110,11 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		if err := c.interruptForCompaction(ctx); err != nil {
 			return err
 		}
+		if p.CompactHash != "" && p.CompactHash != c.compactHash {
+			if err := c.compactNative(ctx); err != nil {
+				return err
+			}
+		}
 	}
 	c.requestHashes = append([]string{}, p.Hashes...)
 	c.inFlight = true

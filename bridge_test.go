@@ -87,6 +87,8 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 		return M{"thread": M{"id": p["threadId"]}}, nil
 	case "turn/interrupt":
 		f.events <- M{"method": "turn/completed", "params": M{"turn": M{"id": p["turnId"], "status": "interrupted"}}}
+	case "thread/compact/start":
+		f.events <- M{"method": "turn/completed", "params": M{"threadId": p["threadId"], "turn": M{"id": "compact-test", "status": "completed"}}}
 	case "turn/start":
 		var active []any
 		if f.tool == dispatcherName {
