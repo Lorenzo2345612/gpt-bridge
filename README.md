@@ -166,6 +166,12 @@ Los agentes que ya tenías instalados siguen
 cargándose. Los subagentes sin modelo explícito heredan el modelo actual de
 la conversación; no se fuerza un modelo global sobre todos ellos.
 
+Desde 0.6.4, si Codex no encuentra el rollout de un hilo que aún no produjo
+ninguna respuesta ni llamada a herramientas, el puente puede reconstruirlo
+con el mismo historial enviado por Claude. Conserva el checkpoint huérfano con
+extensión `.missing-rollout`. No reemplaza hilos con respuestas confirmadas,
+herramientas pendientes o un historial diferente.
+
 ```bash
 claude-codex --check
 claude-codex --models

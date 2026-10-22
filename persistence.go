@@ -289,6 +289,24 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	}
 	p.Persistent = true
 	c, err := openConversation(ctx, rpc, p, b.cwd, key, selected)
+	// A process can die before Codex materializes its first rollout. Only
+	// reconstruct an uncommitted branch whose exact request is still supplied
+	// by the host; completed history and exposed tools must never be replayed.
+	var orphan *sessionCheckpoint
+	if err != nil && selected != nil && strings.Contains(err.Error(), "no rollout found for thread id "+selected.ThreadID) &&
+		len(selected.Expected) == 0 && len(selected.Pending) == 0 && selected.InFlight &&
+		len(selected.RequestHashes) > 0 && prefixMatches(p.Hashes, selected.RequestHashes) {
+		orphan = selected
+		defer lease.Close()
+		rpc, err = b.factory(ctx, b.command, b.cwd, b.timeout)
+		if err == nil {
+			c, err = openConversation(ctx, rpc, p, b.cwd, key, nil)
+		}
+		if err == nil {
+			c.primary = selected.Primary
+			selected = nil
+		}
+	}
 	if err != nil {
 		if lease != nil {
 			lease.Close()
@@ -301,7 +319,9 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 		c.primary = selected.Primary
 	} else {
 		c.statePath = filepath.Join(dir, hash(c.threadID)+".json")
-		c.primary = len(states) == 0
+		if orphan == nil {
+			c.primary = len(states) == 0
+		}
 		c.lease, err = tryStateLock(c.statePath + ".lock")
 		if err != nil {
 			c.close()
@@ -311,6 +331,14 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	if err = c.saveState(); err != nil {
 		c.close()
 		return nil, false, err
+	}
+	if orphan != nil {
+		if err = os.Rename(orphan.path, orphan.path+".missing-rollout"); err != nil {
+			c.close()
+			_ = os.Remove(c.statePath)
+			return nil, false, err
+		}
+		b.trace("recover", c, "uncommitted_rollout_missing_host_history_replayed")
 	}
 	return c, selected != nil, nil
 }
