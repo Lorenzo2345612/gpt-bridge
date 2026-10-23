@@ -314,13 +314,22 @@ herramientas con texto/imágenes. No registra prompts ni credenciales.
 
 El runtime Go conserva huellas del historial para reutilizar conversaciones,
 en lugar de otra copia completa de cada historial. El caché local de respuestas
-está limitado a 128 entradas y 64 MiB. Un recolector cierra conversaciones sin
-identidad de sesión y búsquedas auxiliares tras 30 minutos sin actividad.
-Las conversaciones identificadas de Claude se mantienen mientras el puente siga
-abierto, incluso si pasan más de 30 minutos entre mensajes. El número
-de procesos de conversación no tiene un máximo por defecto. Puedes fijarlo con
-`--max-sessions N`; `--max-sessions 0` significa sin límite.
-Cada proceso nativo de Codex conserva su propio consumo de memoria.
+está limitado a 128 entradas y 64 MiB. Desde 0.6.10, el recolector descarga los
+ejecutores tras 120 segundos inactivos, con una comprobación cada 30 segundos.
+Los hilos identificados conservan su checkpoint y se reanudan con el mismo ID;
+descargar el proceso no borra la conversación ni reproduce herramientas pasadas.
+No se descargan inferencias en curso ni conversaciones identificadas sin
+persistencia. Si Claude sigue ejecutando una herramienta, se puede guardar su
+espera y descargar solo el ejecutor de Codex: la herramienta de Claude continúa.
+Al llegar su resultado se reanuda el mismo hilo; los reintentos conservan los IDs
+de herramienta. Las esperas sin checkpoint permanecen residentes. Antes de
+descargar se confirma el checkpoint; si no se puede guardar, el proceso permanece
+disponible.
+
+`--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
+desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
+por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.
+Cada ejecutor residente de Codex conserva su propio consumo de memoria.
 
 La identidad `metadata.user_id` de Claude y la continuidad del historial fijan
 la rama. Los turnos normales, cambios de instrucciones, altas/bajas de herramientas
@@ -462,10 +471,9 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
 - Sin límite de conversaciones por defecto en el puente. `--max-sessions N` fija
   un máximo por lanzador; `0` desactiva ese máximo. Los límites de la cuenta
   de Codex y los recursos del equipo siguen aplicándose;
-  las búsquedas auxiliares y conversaciones anónimas inactivas caducan a los
-  30 minutos. Las conversaciones identificadas duran hasta cerrar el puente
-  o una expulsión explícita por el máximo configurado. Reiniciar no borra
-  sesiones de Claude.
+  los ejecutores inactivos con checkpoint recuperable se descargan después
+  de 120 segundos (`--idle-timeout`). El hilo persistente conserva su ID al
+  reanudar. Reiniciar no borra sesiones de Claude.
 
 ## Verificación manual
 

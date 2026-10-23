@@ -106,6 +106,9 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 	return c, nil
 }
 func (c *conversation) advance(ctx context.Context, p *prepared) error {
+	if len(c.recoveredPending) > 0 && !c.resetHistory && !pendingAnswered(p, c.recoveredPending) {
+		return bad("Expected the pending tool_result; conversation changed")
+	}
 	if c.resetHistory {
 		if err := c.interruptForCompaction(ctx); err != nil {
 			return err
@@ -203,6 +206,9 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		if pending.Name == "AskUserQuestion" {
 			inputs = append(inputs, M{"type": "text", "text": "The host messages above contain the current human reply/cancellation from AskUserQuestion. Respect that decision; do not repeat the question or treat cancellation as approval."})
 		}
+	}
+	if len(c.recoveredPending) > 0 {
+		inputs = append(inputs, M{"type": "text", "text": "The host tool_result messages above are authoritative, including errors and cancellations. The previous native executor may have stopped while Claude continued executing the tool externally. Do not repeat a host tool merely because its old native RPC was interrupted; continue from the actual host results."})
 	}
 	if e != nil {
 		return e
@@ -366,12 +372,14 @@ type cachedResponse struct {
 	key           string
 	data          []byte
 	pendingThread string
+	pendingState  string
 }
 type Bridge struct {
 	mu                         sync.Mutex
 	command                    []string
 	cwd, model, effort         string
 	timeout                    time.Duration
+	idleTimeout                time.Duration
 	maxSessions, contextWindow int
 	catalog                    []M
 	aliases                    map[string]string
@@ -381,6 +389,9 @@ type Bridge struct {
 	cacheBytes                 int
 	factory                    backendFactory
 	stateDir                   string
+	retiring                   map[string]chan struct{}
+	retireWG                   sync.WaitGroup
+	closed                     bool
 }
 
 func newBridge(command []string, cwd, model string, catalog []M, aliases map[string]string, timeout time.Duration, maxSessions, window int, effort string) *Bridge {
@@ -388,7 +399,7 @@ func newBridge(command []string, cwd, model string, catalog []M, aliases map[str
 	for _, m := range catalog {
 		known[str(m["model"])] = m
 	}
-	return &Bridge{command: command, cwd: cwd, model: model, catalog: catalog, aliases: aliases, known: known, timeout: timeout, maxSessions: maxSessions, contextWindow: window, effort: effort, factory: newRPC}
+	return &Bridge{command: command, cwd: cwd, model: model, catalog: catalog, aliases: aliases, known: known, timeout: timeout, idleTimeout: 2 * time.Minute, maxSessions: maxSessions, contextWindow: window, effort: effort, factory: newRPC, retiring: map[string]chan struct{}{}}
 }
 func prefixMatches(hashes, expected []string) bool {
 	if len(expected) == 0 || len(hashes) < len(expected) {
@@ -454,7 +465,9 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 					}
 				}
 				if !valid {
-					continue
+					if !cachedPendingCheckpointMatches(cached, p) {
+						continue
+					}
 				}
 			}
 			return nil, p, requestKey, cached.data, nil
@@ -576,7 +589,9 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		}
 	}
 	b.retireSupersededLocked(p, key)
-	b.reapLocked(time.Now().Add(-30 * time.Minute))
+	if b.idleTimeout > 0 {
+		b.reapLocked(time.Now().Add(-b.idleTimeout))
+	}
 	if b.maxSessions > 0 && len(b.sessions) >= b.maxSessions {
 		var oldest *conversation
 		for _, c := range b.sessions {
@@ -703,7 +718,7 @@ func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) er
 	if response["stop_reason"] == "tool_use" {
 		pendingThread = c.threadID
 	}
-	b.cache = append(b.cache, cachedResponse{key: key, data: raw, pendingThread: pendingThread})
+	b.cache = append(b.cache, cachedResponse{key: key, data: raw, pendingThread: pendingThread, pendingState: c.statePath})
 	b.cacheBytes += len(raw)
 	for len(b.cache) > 128 || b.cacheBytes > maxCacheBytes {
 		b.cacheBytes -= len(b.cache[0].data)
@@ -722,23 +737,60 @@ func (b *Bridge) discard(c *conversation) {
 	c.close()
 }
 func (b *Bridge) reapLocked(before time.Time) {
+	if b.closed || b.idleTimeout <= 0 {
+		return
+	}
 	for i := 0; i < len(b.sessions); {
 		c := b.sessions[i]
-		if c.hostIdentity != "" && !c.search && !c.auxiliary {
+		// A named ephemeral conversation has no durable recovery path. Keep it
+		// resident; persistent named threads can release their executor safely.
+		if c.hostIdentity != "" && !c.search && !c.auxiliary && c.statePath == "" {
 			i++
 			continue
 		}
 		if c.lastUsed.Before(before) && c.mu.TryLock() {
+			if c.inFlight || (c.statePath == "" && (len(c.pending) > 0 || len(c.recoveredPending) > 0)) {
+				c.mu.Unlock()
+				i++
+				continue
+			}
+			if c.statePath != "" {
+				if err := c.saveState(); err != nil {
+					b.trace("keep", c, "idle_checkpoint_write_failed")
+					c.mu.Unlock()
+					i++
+					continue
+				}
+			}
 			b.sessions = append(b.sessions[:i], b.sessions[i+1:]...)
-			c.close()
-			c.mu.Unlock()
+			done := make(chan struct{})
+			b.retiring[c.threadID] = done
+			b.retireWG.Add(1)
+			b.trace("unload", c, "idle_executor_checkpoint_preserved")
+			// Shutdown can take seconds. Do not block unrelated requests while
+			// waiting for a native process group; its lease stays held until exit.
+			go func(c *conversation, done chan struct{}) {
+				defer b.retireWG.Done()
+				c.close()
+				c.mu.Unlock()
+				close(done)
+				b.mu.Lock()
+				if b.retiring[c.threadID] == done {
+					delete(b.retiring, c.threadID)
+				}
+				b.mu.Unlock()
+			}(c, done)
 		} else {
 			i++
 		}
 	}
 }
 func (b *Bridge) janitor(ctx context.Context) {
-	tick := time.NewTicker(time.Minute)
+	interval := 30 * time.Second
+	if b.idleTimeout > 0 && b.idleTimeout/2 < interval {
+		interval = max(time.Second, b.idleTimeout/2)
+	}
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		select {
@@ -746,13 +798,14 @@ func (b *Bridge) janitor(ctx context.Context) {
 			return
 		case now := <-tick.C:
 			b.mu.Lock()
-			b.reapLocked(now.Add(-30 * time.Minute))
+			b.reapLocked(now.Add(-b.idleTimeout))
 			b.mu.Unlock()
 		}
 	}
 }
 func (b *Bridge) close() {
 	b.mu.Lock()
+	b.closed = true
 	sessions := b.sessions
 	b.sessions = nil
 	b.cache = nil
@@ -764,6 +817,7 @@ func (b *Bridge) close() {
 		go func(c *conversation) { defer wg.Done(); c.mu.Lock(); defer c.mu.Unlock(); c.close() }(c)
 	}
 	wg.Wait()
+	b.retireWG.Wait()
 }
 func errorStatus(err error) int {
 	var e *bridgeError

@@ -19,18 +19,19 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.9"
+const bridgeVersion = "0.6.10"
 
 type options struct {
 	serve, check, models, version      bool
 	dashboard                          bool
 	port, timeout, maxSessions, window int
+	idleTimeout                        int
 	model, effort, tokenFile           string
 	claudeArgs                         []string
 }
 
 func parseOptions(args []string) (options, error) {
-	o := options{timeout: 300, maxSessions: 0, model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
+	o := options{timeout: 300, maxSessions: 0, idleTimeout: 120, model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -49,7 +50,7 @@ func parseOptions(args []string) (options, error) {
 			o.models = true
 		case "--bridge-version":
 			o.version = true
-		case "--port", "--timeout", "--max-sessions", "--context-window", "--model", "--codex-model", "--effort", "--token-file":
+		case "--port", "--timeout", "--max-sessions", "--idle-timeout", "--context-window", "--model", "--codex-model", "--effort", "--token-file":
 			if !inline {
 				i++
 				if i >= len(args) {
@@ -76,6 +77,8 @@ func parseOptions(args []string) (options, error) {
 					o.timeout = n
 				case "--max-sessions":
 					o.maxSessions = n
+				case "--idle-timeout":
+					o.idleTimeout = n
 				case "--context-window":
 					if n <= 0 {
 						return o, bad("--context-window must be positive")
@@ -87,8 +90,8 @@ func parseOptions(args []string) (options, error) {
 			o.claudeArgs = append(o.claudeArgs, arg)
 		}
 	}
-	if o.timeout < 1 || o.maxSessions < 0 || o.port < 0 || o.port > 65535 {
-		return o, bad("Invalid timeout, maximum session count or port")
+	if o.timeout < 1 || o.maxSessions < 0 || o.idleTimeout < 0 || o.port < 0 || o.port > 65535 {
+		return o, bad("Invalid timeout, idle timeout, maximum session count or port")
 	}
 	if o.serve && o.tokenFile == "" {
 		return o, bad("--serve requires --token-file")
@@ -259,7 +262,7 @@ func run(args []string) (exitCode int, runError error) {
 			agentNames = append(agentNames, k)
 		}
 		sort.Strings(agentNames)
-		fmt.Println(string(encode(M{"auth": "chatgpt", "runtime": "go", "default_model": model, "models": names, "aliases": roles, "subagents": agentNames, "client_context_window": window, "native_context_windows": windows, "claude_config_dir": claudeConfig()})))
+		fmt.Println(string(encode(M{"auth": "chatgpt", "runtime": "go", "default_model": model, "models": names, "aliases": roles, "subagents": agentNames, "client_context_window": window, "native_context_windows": windows, "claude_config_dir": claudeConfig(), "idle_timeout_seconds": opts.idleTimeout})))
 		return 0, nil
 	}
 	if opts.models {
@@ -284,6 +287,7 @@ func run(args []string) (exitCode int, runError error) {
 		return 1, bad("Local bridge token must have at least 24 characters")
 	}
 	b := newBridge(command, cwd, model, catalog, roles, timeout, opts.maxSessions, opts.window, opts.effort)
+	b.idleTimeout = time.Duration(opts.idleTimeout) * time.Second
 	b.stateDir = fallback(os.Getenv("CLAUDE_CODEX_STATE_DIR"), filepath.Join(claudeConfig(), "gpt-bridge", "sessions", hash(codexHome())[:16]))
 	for _, arg := range opts.claudeArgs {
 		if arg == "--no-session-persistence" {

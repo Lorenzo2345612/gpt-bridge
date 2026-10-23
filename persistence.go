@@ -15,6 +15,29 @@ import (
 var errStateLocked = errors.New("state file is locked")
 var legacySessionID = regexp.MustCompile(`_session_([a-zA-Z0-9-]+)(?:_agent_([a-zA-Z0-9-]+))?`)
 
+// An idle executor may be gone while Claude is still executing its tool. An
+// HTTP retry must receive the same public tool IDs, not start the tool again.
+func cachedPendingCheckpointMatches(cached cachedResponse, p *prepared) bool {
+	if cached.pendingState == "" {
+		return false
+	}
+	raw, err := os.ReadFile(cached.pendingState)
+	if err != nil {
+		return false
+	}
+	var saved sessionCheckpoint
+	if decode(raw, &saved) != nil || saved.Version != 1 || saved.ThreadID != cached.pendingThread ||
+		saved.HostIdentity != p.HostIdentity || saved.InFlight || len(saved.Pending) == 0 ||
+		len(saved.Expected) != len(p.Hashes)+1 || !prefixMatches(saved.Expected, p.Hashes) {
+		return false
+	}
+	var response M
+	if decode(cached.data, &response) != nil {
+		return false
+	}
+	return saved.Expected[len(saved.Expected)-1] == hash(M{"role": "assistant", "content": response["content"]})
+}
+
 func hostIdentity(value string) string {
 	if value == "" {
 		return ""
@@ -272,6 +295,22 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	}
 	var lease *os.File
 	if selected != nil {
+		if done := b.retiring[selected.ThreadID]; done != nil {
+			// The janitor already removed this executor from the live set, but
+			// its exclusive lease remains held during shutdown. Wait without the
+			// bridge mutex instead of returning a spurious cross-bridge conflict.
+			b.mu.Unlock()
+			var waitErr error
+			select {
+			case <-done:
+			case <-ctx.Done():
+				waitErr = ctx.Err()
+			}
+			b.mu.Lock()
+			if waitErr != nil {
+				return nil, false, &bridgeError{504, "Timed out or cancelled waiting for idle Codex executor shutdown"}
+			}
+		}
 		lease, err = tryStateLock(selected.path + ".lock")
 		if err != nil {
 			if errors.Is(err, errStateLocked) {
