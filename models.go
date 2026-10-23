@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -40,24 +41,58 @@ func claudeConfig() string {
 	return fallback(os.Getenv("CLAUDE_CONFIG_DIR"), filepath.Join(userHome(), ".claude"))
 }
 func codexCommand(binary string) ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return codexCommandForCWD(binary, cwd)
+}
+
+func codexCommandForCWD(binary, cwd string) ([]string, error) {
 	args := []string{binary, "app-server", "--stdio"}
 	for _, name := range []string{"shell_tool", "unified_exec", "apps", "plugins", "hooks", "multi_agent", "browser_use", "computer_use", "view_image", "image_generation", "goals", "tool_suggest", "skill_search", "sleep_tool", "code_mode"} {
 		args = append(args, "-c", "features."+name+"=false")
 	}
 	args = append(args, "-c", "features.skip_host_skill_discovery=true", "-c", `web_search="disabled"`, "-c", "project_doc_max_bytes=0", "-c", `model_provider="openai"`)
-	data, e := os.ReadFile(filepath.Join(codexHome(), "config.toml"))
-	if os.IsNotExist(e) {
-		return args, nil
+	paths := []string{filepath.Join(codexHome(), "config.toml")}
+	for dir := filepath.Clean(cwd); ; dir = filepath.Dir(dir) {
+		paths = append(paths, filepath.Join(dir, ".codex", "config.toml"))
+		if filepath.Dir(dir) == dir {
+			break
+		}
 	}
-	if e != nil {
-		return nil, e
+	seen := map[string]bool{}
+	for _, path := range paths {
+		data, e := os.ReadFile(path)
+		if os.IsNotExist(e) {
+			continue
+		}
+		if e != nil {
+			return nil, e
+		}
+		var config M
+		if e = toml.Unmarshal(data, &config); e != nil {
+			return nil, bad("Could not parse Codex config.toml at %s", path)
+		}
+		for name := range object(config["mcp_servers"]) {
+			seen[name] = true
+		}
 	}
-	var config M
-	if e = toml.Unmarshal(data, &config); e != nil {
-		return nil, bad("Could not parse Codex config.toml")
-	}
-	for name := range object(config["mcp_servers"]) {
-		args = append(args, "-c", "mcp_servers."+string(encode(name))+".enabled=false")
+	// Codex's dotted override parser does not unquote key segments. A single
+	// inline TOML table preserves names with dots/spaces. Supply a harmless,
+	// disabled stdio transport because the override replaces the whole table;
+	// enabled=false alone is not a valid MCP transport in current Codex.
+	if len(seen) > 0 {
+		names := make([]string, 0, len(seen))
+		for name := range seen {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		entries := make([]string, 0, len(names))
+		for _, name := range names {
+			entries = append(entries, string(encode(name))+`={enabled=false,command="gpt-bridge-disabled-native-mcp"}`)
+		}
+		args = append(args, "-c", "mcp_servers={"+strings.Join(entries, ",")+"}")
 	}
 	return args, nil
 }

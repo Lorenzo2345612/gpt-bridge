@@ -131,7 +131,7 @@ func TestCodexCommandParsesQuotedMCPNames(t *testing.T) {
 		t.Fatal(e)
 	}
 	joined := strings.Join(args, "\n")
-	if !strings.Contains(joined, `mcp_servers."server.with spaces".enabled=false`) {
+	if !strings.Contains(joined, `"server.with spaces"={enabled=false,command=`) {
 		t.Fatal(args)
 	}
 	if strings.Contains(joined, "code_mode_host=false") {

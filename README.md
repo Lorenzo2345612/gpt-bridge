@@ -190,6 +190,11 @@ que no coinciden con ningún hilo guardado no desplazan esas referencias del bú
 Desde 0.6.8, los espacios y saltos de línea exteriores de un resumen no alteran
 su identidad de compactación; Claude puede añadir un salto de línea al enviarlo.
 
+Desde 0.6.9, el puente desactiva también los MCP nativos definidos en los
+`.codex/config.toml` del proyecto y sus directorios superiores. Claude sigue
+ejecutando sus propios MCP; cada hilo nativo de Codex ya no arranca copias de
+Plane, Playwright o Portal PO. La configuración compartida no se modifica.
+
 ```bash
 claude-codex --check
 claude-codex --models
