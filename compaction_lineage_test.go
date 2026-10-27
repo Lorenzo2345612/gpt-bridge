@@ -58,6 +58,9 @@ func TestCompactionUsesJournalLineageWithMultipleBranches(t *testing.T) {
 	for _, restart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "live", true: "restart"}[restart], func(t *testing.T) {
 			f, body, response, wanted := branchingCompactionFixture(t)
+			// Host compaction continues the owner in a fresh native thread; its
+			// checkpoint (and lease) identify the conversation.
+			wantedPath := f.b.sessions[1].statePath
 			compact := compactRequest(body)
 			compact["tools"] = []any{}
 			writeCompactionJournal(t, compact, response)
@@ -72,11 +75,11 @@ func TestCompactionUsesJournalLineageWithMultipleBranches(t *testing.T) {
 			}
 			var owner *conversation
 			for _, c := range f.b.sessions {
-				if c.threadID == wanted {
+				if c.statePath == wantedPath {
 					owner = c
 				}
 			}
-			if owner == nil || owner.compactHash == "" {
+			if owner == nil || owner.compactHash == "" || owner.threadID == wanted {
 				t.Fatal("Selected the primary or created a new native thread instead of the journal owner")
 			}
 			if !restart && (len(f.b.sessions[0].pending) != 1 || len(f.b.sessions) != 2) {
@@ -95,6 +98,7 @@ func TestCompactionUsesJournalLineageWithMultipleBranches(t *testing.T) {
 func TestCompactionUsesUniqueRetainedMessage(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	f, body, response, wanted := branchingCompactionFixture(t)
+	wantedPath := f.b.sessions[1].statePath
 	compact := compactRequest(body)
 	compact["tools"] = []any{}
 	compact["messages"] = append(array(compact["messages"]), M{"role": "assistant", "content": response["content"]}, M{"role": "user", "content": "Continue after the compacted summary"})
@@ -102,7 +106,7 @@ func TestCompactionUsesUniqueRetainedMessage(t *testing.T) {
 	if status != 200 {
 		t.Fatal(status, result)
 	}
-	if f.b.sessions[1].threadID != wanted || f.b.sessions[1].compactHash == "" || len(f.b.sessions[0].pending) != 1 {
+	if f.b.sessions[1].statePath != wantedPath || f.b.sessions[1].threadID == wanted || f.b.sessions[1].compactHash == "" || len(f.b.sessions[0].pending) != 1 {
 		t.Fatal("Retained message selected the wrong branch")
 	}
 }

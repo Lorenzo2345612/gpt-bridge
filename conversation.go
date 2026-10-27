@@ -50,12 +50,14 @@ type conversation struct {
 	samplesEnded, samplesMeasured int
 	sentContext                   map[string]string
 	toolOutputTokenLimit          int
+	cwd                           string
+	freshThread                   bool
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
 	return openConversation(ctx, rpc, p, cwd, key, nil)
 }
-func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string, saved *sessionCheckpoint) (*conversation, error) {
+func threadStartParams(p *prepared, cwd string, persistent bool) M {
 	// Claude's system prompt already carries the environment, skills and
 	// permissions. Codex's own copies are dead weight in every native thread
 	// (and after every compaction); process-level features.* flags do not
@@ -81,7 +83,10 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 		config["model_context_window"] = p.ContextWindow
 		config["model_auto_compact_token_limit"] = p.EffectiveContextWindow
 	}
-	params := M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": !p.Persistent, "environments": []any{}, "dynamicTools": specs, "config": config}
+	return M{"model": p.Model, "modelProvider": "openai", "cwd": cwd, "baseInstructions": instructions, "developerInstructions": "", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": !persistent, "environments": []any{}, "dynamicTools": specs, "config": config}
+}
+func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string, saved *sessionCheckpoint) (*conversation, error) {
+	params := threadStartParams(p, cwd, p.Persistent)
 	method := "thread/start"
 	if saved != nil {
 		method = "thread/resume"
@@ -101,7 +106,7 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 		rpc.Close()
 		return nil, upstream("Codex returned an invalid thread")
 	}
-	c := &conversation{auxiliary: p.Auxiliary, baseSystemHash: p.BaseSystemHash, compactHash: p.CompactHash, contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
+	c := &conversation{auxiliary: p.Auxiliary, baseSystemHash: p.BaseSystemHash, compactHash: p.CompactHash, contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, cwd: cwd, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
 	if saved != nil {
 		c.expected = append([]string{}, saved.Expected...)
 		c.primary = saved.Primary
@@ -129,7 +134,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 			return err
 		}
 		if p.CompactHash != "" && p.CompactHash != c.compactHash {
-			if err := c.compactNative(ctx); err != nil {
+			if err := c.restartNative(ctx, p); err != nil {
 				return err
 			}
 		}
@@ -219,7 +224,9 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		messages = messages[len(c.expected):]
 	}
 	inputs, e := transcriptInput(messages)
-	if c.resetHistory {
+	if c.freshThread {
+		inputs = append([]any{M{"type": "text", "text": "Claude compacted its host transcript. This native thread continues the SAME conversation from Claude's summary and the messages below, which are the complete current view; it is not a new task. Respond only to the latest request; never re-execute historical tool calls."}}, inputs...)
+	} else if c.resetHistory {
 		inputs = append([]any{M{"type": "text", "text": "Claude compacted or recovered its host transcript. This is a summary/current view of the SAME conversation, not a new task or a request to repeat tools. Preserve your existing native context. Apply the summary and respond only to its latest request; never re-execute historical tool calls."}}, inputs...)
 	}
 	for _, pending := range c.recoveredPending {
@@ -254,6 +261,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		sent()
 		c.model = p.Model
 		c.resetHistory = false
+		c.freshThread = false
 		c.compactHash = p.CompactHash
 		c.recoveredPending = nil
 		c.contextSent()

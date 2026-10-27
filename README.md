@@ -358,6 +358,15 @@ reinicio o un error volvía a añadir todo el prompt y el catálogo (~77k tokens
 una prueba, ~120k en una sesión real). Si Codex compacta el hilo, el contexto se
 envía completo una vez.
 
+Desde 0.6.15, cuando Claude compacta su transcript el puente continúa la
+conversación en un hilo nativo nuevo (mismo ejecutor, checkpoint y lease) que
+recibe solo el resumen de Claude y el contexto del host, igual que Claude, que
+tras compactar solo conserva su resumen. La compactación de Codex conservaba
+todos los mensajes de usuario anteriores (cada turno de Claude lo es, incluidas
+instantáneas completas de compactaciones previas): en una prueba el hilo quedaba
+en 133k tokens tras compactar y ahora en 80k. El modelo ya no conserva memoria
+nativa de lo que el resumen omite. El hilo anterior permanece en disco.
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.

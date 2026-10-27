@@ -99,14 +99,19 @@ func TestPersistentRestartAndCompactionKeepThread(t *testing.T) {
 		t.Fatal(status, response)
 	}
 	second.b.mu.Lock()
-	if len(second.b.sessions) != 1 || second.b.sessions[0].threadID != id {
-		t.Fatal("Compaction replaced the thread")
-	}
+	sessions := len(second.b.sessions)
+	compacted := second.b.sessions[0].threadID
 	second.b.mu.Unlock()
+	// Host compaction continues in a fresh native thread under the same
+	// checkpoint, carrying only Claude's summary.
+	if sessions != 1 || compacted == id || compacted == "" {
+		t.Fatal("Compaction did not continue in a fresh native thread", sessions, compacted)
+	}
 	calls, _ = second.rpc().snapshot()
-	if len(calls) != 4 || calls[2].Method != "thread/compact/start" || !strings.Contains(string(encode(calls[3].Params["input"])), "SAME conversation") {
+	if len(calls) != 4 || calls[2].Method != "thread/start" || calls[3].Params["threadId"] != compacted || !strings.Contains(string(encode(calls[3].Params["input"])), "SAME conversation") {
 		t.Fatal(calls)
 	}
+	id = compacted
 	second.b.close()
 	third := persistentFixture(t, dir)
 	body = continueRequest(body, response, "Continue after another restart")
@@ -184,7 +189,9 @@ func TestCompactionInterruptsPendingNativeTurnWithoutNewThread(t *testing.T) {
 			interrupted = true
 		}
 	}
-	if count != 1 || !interrupted {
+	// The pending native turn is interrupted; the compacted conversation then
+	// continues in one fresh native thread of the same executor.
+	if count != 2 || !interrupted || len(f.b.sessions) != 1 {
 		t.Fatal(calls)
 	}
 }
@@ -271,10 +278,10 @@ func TestSummaryHelperNeverReplacesOrPersistsAsMainConversation(t *testing.T) {
 		t.Fatal(status, result)
 	}
 	f.b.mu.Lock()
-	same := f.b.sessions[0].threadID == id
+	same := len(f.b.sessions) == 1 && f.b.sessions[0].statePath == files[0] && f.b.sessions[0].threadID != id
 	f.b.mu.Unlock()
 	if !same {
-		t.Fatal("Compaction replaced main")
+		t.Fatal("Compaction did not continue main under its checkpoint")
 	}
 }
 func TestClaudeSessionUUIDRestoresPrimaryAfterReplayChanges(t *testing.T) {

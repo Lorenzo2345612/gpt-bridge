@@ -73,12 +73,12 @@ def main():
             url = start()
             second = post(url, body)
             assert marker in str(second['content']), second
-            # The compacted host view deliberately omits the marker. A rebuild
-            # from this request would be unable to recover it.
+            # Like Claude, a host compaction keeps only its summary: the bridge
+            # continues in a fresh native thread that knows what the summary says.
             body['messages'] = [{'role': 'user', 'content':
                 'This session is being continued from a previous conversation that ran out of context. '
-                'Summary: we were testing a public marker, intentionally omitted from this summary. '
-                'Keep your existing native memory and reply only with that earlier public marker.'}]
+                'Summary: we were testing the public test marker ' + marker + '. '
+                'Reply only with that public marker.'}]
             third = post(url, body)
             assert third['stop_reason'] == 'end_turn' and marker in str(third['content']), third
             body['tools'] = [{'name': 'Echo', 'description': 'Record text.', 'input_schema': {
@@ -105,13 +105,15 @@ def main():
             log.close()
         traces = [line for line in (root / 'trace').read_text().splitlines() if line.startswith('gpt-bridge: event=')]
         threads = {part for line in traces for part in line.split() if part.startswith('thread=')}
-        assert len(threads) == 1 and sum('event=new ' in line for line in traces) == 1, traces
+        # One conversation and checkpoint; host compaction continues it in one
+        # fresh native thread.
+        assert len(threads) == 2 and sum('event=new ' in line for line in traces) == 1, traces
         assert sum('event=resume ' in line for line in traces) == 3 and any('event=compact ' in line for line in traces), traces
         files = list((root / 'state').glob('*/*.json'))
         assert len(files) == 1, files
         state_text = files[0].read_text()
         assert marker not in state_text and 'Echo executed' not in state_text, 'Checkpoint copied conversation text'
-        print(json.dumps({'native_threads': 1, 'restarts': 3, 'host_compaction': True,
+        print(json.dumps({'native_threads': 2, 'checkpoints': 1, 'restarts': 3, 'host_compaction': True,
                           'crash_recovery': True, 'pending_tool_not_repeated': True,
                           'checkpoint_contains_no_prompt_text': True}))
 
