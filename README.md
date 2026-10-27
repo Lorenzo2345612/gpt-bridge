@@ -67,7 +67,17 @@ su `compact_boundary` y las huellas de las respuestas anteriores. La lectura es
 local y no modifica el historial. Esto permite recuperar el thread correcto,
 aunque no sea el principal, incluso después de reiniciar el puente. No se elige
 una rama solo porque comparta las mismas instrucciones. Si no hay evidencia
-suficiente, el puente conserva los threads y devuelve un error de ambigüedad.
+suficiente, el puente conserva los threads y sus checkpoints sin elegir una rama:
+continúa en un hilo nuevo con el resumen de Claude y el contexto actual del host.
+La recuperación tiene su propio checkpoint y se puede reanudar sin importar el
+historial nativo de las ramas ambiguas.
+
+Desde 0.6.17, esta recuperación también funciona con sesiones que ya quedaron
+bloqueadas por el error 409 en versiones anteriores. Actualiza el ejecutable,
+reinicia el puente y reanuda el mismo chat de Claude; no borres sus checkpoints.
+Si el historial local demuestra el linaje, se conserva el checkpoint correcto;
+si sigue siendo ambiguo, se continúa desde el resumen en un hilo independiente.
+No se fusionan historiales ni se repiten herramientas de las ramas anteriores.
 
 ## Instalación y uso
 

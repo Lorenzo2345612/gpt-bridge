@@ -118,6 +118,7 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 			c.sentContext[key] = h
 		}
 		c.recoveredPending = saved.Pending
+		c.usage = M{"input_tokens": saved.ContextTokens, "output_tokens": 0}
 		c.resetHistory = !prefixMatches(p.Hashes, c.expected)
 	}
 	if !c.search {
@@ -617,7 +618,10 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			candidates = append(candidates, only)
 		}
 		if len(candidates) > 1 {
-			return nil, nil, "", nil, &bridgeError{409, "Compacted history matches multiple branches; refusing to mix their contexts"}
+			// The host summary is sufficient to continue in isolation. Never
+			// guess which live branch to interrupt or replace.
+			p.FreshCompaction = true
+			candidates = nil
 		}
 		if len(candidates) == 1 {
 			c := candidates[0]

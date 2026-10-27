@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -111,22 +112,160 @@ func TestCompactionUsesUniqueRetainedMessage(t *testing.T) {
 	}
 }
 
-func TestCompactionStillRejectsUnprovenBranch(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	f, body, _, _ := branchingCompactionFixture(t)
-	status, result := f.post(t, compactRequest(body))
-	if status != 409 {
-		t.Fatal("Guessed a branch with no lineage evidence", status, result)
+// An ambiguous compacted view must not take over a branch. Recover in a fresh
+// thread and retain all old checkpoints, including pending tool invocations.
+func TestAmbiguousCompactionRecoversWithoutChangingBranches(t *testing.T) {
+	for _, mode := range []string{"live", "restart", "no-compatible-checkpoint"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+			f, body, _, _ := branchingCompactionFixture(t)
+			dir := f.b.stateDir
+			original := map[string][]byte{}
+			ids := map[string]bool{}
+			for _, c := range f.b.sessions {
+				raw, err := os.ReadFile(c.statePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				original[c.statePath] = raw
+				ids[c.threadID] = true
+			}
+			if mode != "live" {
+				f.b.close()
+				f = persistentFixture(t, dir)
+			}
+			compact := compactRequest(body)
+			compact["tools"] = []any{}
+			if mode == "no-compatible-checkpoint" {
+				compact["system"] = "Changed host instructions after compaction"
+			}
+			status, result := f.post(t, compact)
+			if status != 200 || result["stop_reason"] != "end_turn" {
+				t.Fatal("ambiguous compaction did not recover", status, result)
+			}
+			fresh := f.b.sessions[len(f.b.sessions)-1]
+			if ids[fresh.threadID] || original[fresh.statePath] != nil {
+				t.Fatal("recovery took over an ambiguous branch")
+			}
+			for path, before := range original {
+				after, err := os.ReadFile(path)
+				if err != nil || string(after) != string(before) {
+					t.Fatal("recovery changed an existing checkpoint", path, err)
+				}
+			}
+			calls, _ := f.rpc().snapshot()
+			for _, call := range calls {
+				if call.Method == "thread/resume" || call.Method == "turn/interrupt" {
+					t.Fatal("recovery touched an ambiguous thread", call.Method)
+				}
+			}
+			last := calls[len(calls)-1]
+			if last.Method != "turn/start" || !strings.Contains(string(encode(last.Params["input"])), "complete current view") {
+				t.Fatal("fresh thread did not receive the compacted host view")
+			}
+			if mode == "live" && (len(f.b.sessions) != 3 || len(f.b.sessions[0].pending) != 1 || len(f.b.sessions[1].pending) != 1) {
+				t.Fatal("recovery disturbed pending branches")
+			}
+			count := len(f.backends)
+			if retryStatus, retry := f.post(t, compact); retryStatus != 200 || string(encode(retry["content"])) != string(encode(result["content"])) || len(f.backends) != count {
+				t.Fatal("identical retry created another thread", retryStatus, retry)
+			}
+			id := fresh.threadID
+			// A continuation after executor unload must select the recovered
+			// checkpoint, not create another recovery thread.
+			f.b.close()
+			reopened := persistentFixture(t, dir)
+			status, result = reopened.post(t, continueRequest(compact, result, "Continue recovered conversation"))
+			if status != 200 || reopened.b.sessions[0].threadID != id {
+				t.Fatal("recovery did not survive restart", status, result)
+			}
+		})
 	}
-	if len(f.b.sessions) != 2 || len(f.b.sessions[0].pending) != 1 || len(f.b.sessions[1].pending) != 1 {
-		t.Fatal("Ambiguous compaction changed existing contexts")
-	}
-	dir := f.b.stateDir
-	f.b.close()
-	reopened := persistentFixture(t, dir)
-	status, result = reopened.post(t, compactRequest(body))
-	if status != 409 {
-		t.Fatal("Restart guessed the primary without compaction evidence", status, result)
+}
+
+// Older bridges rejected compaction without updating version-1 checkpoints.
+// The same host session must recover after upgrading, even with failed retries
+// in its journal; proven lineage is reused, otherwise old branches stay intact.
+func TestPreviouslyRejectedCompactionRecoversLegacySession(t *testing.T) {
+	for _, proven := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ambiguous", true: "journal-owner"}[proven], func(t *testing.T) {
+			f, body, response, _ := branchingCompactionFixture(t)
+			dir := f.b.stateDir
+			ownerPath := f.b.sessions[1].statePath
+			f.b.close()
+			original := map[string][]byte{}
+			states, err := filepath.Glob(filepath.Join(dir, "*", "*.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range states {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var state M
+				if err = decode(raw, &state); err != nil {
+					t.Fatal(err)
+				}
+				delete(state, "context_tokens")
+				raw = encode(state)
+				if err = os.WriteFile(path, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+				original[path] = raw
+			}
+			if len(original) != 2 {
+				t.Fatal("missing legacy checkpoints")
+			}
+			compact := compactRequest(body)
+			compact["tools"] = []any{}
+			if !proven {
+				response = M{"content": "Unmatched older response"}
+			}
+			writeCompactionJournal(t, compact, response)
+			p, err := prepare(compact, "gpt-test-sol", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(claudeConfig(), "projects", "test-project", p.ClaudeSessionID+".jsonl")
+			journal, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for retry := 0; retry < 3; retry++ {
+				row := M{"type": "assistant", "isApiErrorMessage": true, "message": M{"role": "assistant", "model": "<synthetic>", "content": []any{M{"type": "text", "text": "409 Cannot identify the compacted conversation unambiguously; saved threads were preserved"}}}}
+				if _, err = journal.Write(append(encode(row), '\n')); err != nil {
+					journal.Close()
+					t.Fatal(err)
+				}
+			}
+			journal.Close()
+			f = persistentFixture(t, dir)
+			status, result := f.post(t, compact)
+			if status != 200 || result["stop_reason"] != "end_turn" {
+				t.Fatal("previously rejected session did not recover", status, result)
+			}
+			recovered := f.b.sessions[0]
+			if (recovered.statePath == ownerPath) != proven {
+				t.Fatal("recovery did not respect available lineage")
+			}
+			for path, before := range original {
+				if proven && path == ownerPath {
+					continue
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || string(after) != string(before) {
+					t.Fatal("recovery changed an unrelated legacy checkpoint", path, err)
+				}
+			}
+			id := recovered.threadID
+			f.b.close()
+			f = persistentFixture(t, dir)
+			status, result = f.post(t, continueRequest(compact, result, "Continue previously rejected session"))
+			if status != 200 || f.b.sessions[0].threadID != id {
+				t.Fatal("legacy recovery did not survive restart", status, result)
+			}
+		})
 	}
 }
 

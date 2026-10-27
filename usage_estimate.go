@@ -128,3 +128,10 @@ func (c *conversation) reportedUsage() M {
 	}
 	return usage
 }
+
+// contextTokens is the native context size the bridge last knew of, measured or
+// estimated, for the checkpoint.
+func (c *conversation) contextTokens() int {
+	u := c.reportedUsage()
+	return integer(u["input_tokens"]) + integer(u["cache_read_input_tokens"]) + integer(u["output_tokens"])
+}

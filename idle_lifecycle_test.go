@@ -297,3 +297,22 @@ func TestResumedExecutorSendsOnlyChangedHostContext(t *testing.T) {
 		t.Fatal("thread lost the updated host instructions")
 	}
 }
+
+func TestResumedExecutorReportsTheKnownContextSize(t *testing.T) {
+	saved := &sessionCheckpoint{Version: 1, ThreadID: "thread-known", Expected: []string{}, ContextTokens: 91050}
+	c, err := openConversation(context.Background(), newFake(), &prepared{Model: "gpt-test-sol", Persistent: true}, t.TempDir(), "key", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Before Codex measures anything, the first tool_use must not report only
+	// what was appended since the resume.
+	c.addUnmeasured(200)
+	c.sampleEnded()
+	if got := integer(c.reportedUsage()["input_tokens"]); got != 91250 {
+		t.Fatal("resumed executor forgot the native context size", got)
+	}
+	c.sampleMeasured(M{"input_tokens": 500, "output_tokens": 10, "cache_read_input_tokens": 91000})
+	if got := c.contextTokens(); got != 91510 {
+		t.Fatal("measurement must replace the saved estimate", got)
+	}
+}

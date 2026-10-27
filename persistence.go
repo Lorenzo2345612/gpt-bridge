@@ -84,9 +84,13 @@ type sessionCheckpoint struct {
 	ContextWindow  int            `json:"context_window"`
 	// Hashes of the additional-context values the native thread already holds,
 	// so a resumed executor sends only what changed. No prompt text.
-	Context   map[string]string `json:"context,omitempty"`
-	UpdatedAt time.Time         `json:"updated_at"`
-	path      string
+	Context map[string]string `json:"context,omitempty"`
+	// Last native context size reported to Claude. A resumed executor has no
+	// measurement until Codex publishes one; without it the first response
+	// reported only what was appended since the resume.
+	ContextTokens int       `json:"context_tokens,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	path          string
 }
 
 func compactionHash(messages []any) string {
@@ -169,7 +173,7 @@ func (c *conversation) saveState() error {
 	for _, p := range c.pending {
 		pending = append(pending, savedPending{PublicID: p.PublicID, Name: p.Name})
 	}
-	state := sessionCheckpoint{Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, UpdatedAt: time.Now()}
+	state := sessionCheckpoint{Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
 	f, err := os.CreateTemp(filepath.Dir(c.statePath), ".checkpoint-*")
 	if err != nil {
 		return err
@@ -236,7 +240,7 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 		owned[live.threadID] = true
 	}
 	for i := range states {
-		if owned[states[i].ThreadID] {
+		if p.FreshCompaction || owned[states[i].ThreadID] {
 			continue
 		}
 		if p.CompactionThread != "" {
@@ -263,7 +267,7 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 	// On a fresh bridge, Claude's explicit session UUID identifies its primary
 	// thread even if replay changes old host-message wrappers. Live forks are
 	// still matched by history and may never take over a parent's active thread.
-	if selected == nil && p.NamedSession && (!newCompaction || len(states) <= 1) {
+	if selected == nil && !p.FreshCompaction && p.NamedSession && (!newCompaction || len(states) <= 1) {
 		livePrimary := false
 		for _, live := range b.sessions {
 			if live.hostIdentity == p.HostIdentity && live.primary {
@@ -279,7 +283,7 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 			}
 		}
 	}
-	if selected == nil && newCompaction {
+	if selected == nil && newCompaction && !p.FreshCompaction {
 		candidates := []int{}
 		for i, state := range states {
 			if !owned[state.ThreadID] && state.BaseSystemHash == p.BaseSystemHash {
@@ -290,7 +294,10 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 			candidates = append(candidates, 0)
 		}
 		if len(candidates) > 1 || (len(candidates) == 0 && len(states) > 0) {
-			return nil, false, &bridgeError{409, "Cannot identify the compacted conversation unambiguously; saved threads were preserved"}
+			// Preserve every candidate and its lease. A separate checkpoint
+			// continues solely from the compacted host view, without importing
+			// or modifying any ambiguous native history.
+			p.FreshCompaction = true
 		}
 		if len(candidates) == 1 {
 			selected = &states[candidates[0]]
@@ -369,6 +376,10 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 			c.close()
 			return nil, false, err
 		}
+	}
+	if p.FreshCompaction {
+		c.freshThread = true
+		b.trace("recover", c, "ambiguous_compaction_fresh_thread_saved_branches_preserved")
 	}
 	if err = c.saveState(); err != nil {
 		c.close()

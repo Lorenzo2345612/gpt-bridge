@@ -517,6 +517,7 @@ type prepared struct {
 	NamedSession                          bool
 	ClaudeSessionID, ClaudeAgentID        string
 	CompactionThread                      string
+	FreshCompaction                       bool
 	System, Model, Effort                 string
 	Specs                                 []any
 	Names                                 map[string]string
