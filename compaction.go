@@ -53,6 +53,11 @@ func (c *conversation) interruptForCompaction(ctx context.Context) error {
 	}
 }
 
+const awayRecapPrompt = "The user stepped away and is coming back. Recap"
+
+// compactionRequest reports Claude's one-shot side requests (compaction summary,
+// away recap). They run in ephemeral threads that are never persisted, reused
+// or matched to the conversation.
 func compactionRequest(messages []any) bool {
 	if len(messages) == 0 {
 		return false
@@ -65,6 +70,12 @@ func compactionRequest(messages []any) bool {
 	for _, v := range bs {
 		text := str(object(v)["text"])
 		if strings.Contains(text, "Your task is to create a detailed summary of the conversation so far") && strings.Contains(text, "<summary>") {
+			return true
+		}
+		// Claude Code's away recap forks the whole conversation for a one-shot
+		// side answer. Treated as a branch, every recap re-appended the full
+		// transcript to one persistent native thread (215k -> 379k chars).
+		if strings.HasPrefix(strings.TrimSpace(text), awayRecapPrompt) {
 			return true
 		}
 	}

@@ -367,6 +367,12 @@ instantáneas completas de compactaciones previas): en una prueba el hilo quedab
 en 133k tokens tras compactar y ahora en 80k. El modelo ya no conserva memoria
 nativa de lo que el resumen omite. El hilo anterior permanece en disco.
 
+Desde 0.6.16, el recap que Claude Code pide al volver tras una ausencia ("The user
+stepped away and is coming back…") se trata como petición auxiliar, igual que el
+resumen de compactación: hilo efímero, sin checkpoint y sin reutilizar. Antes se
+guardaba como rama de la conversación y cada recap volvía a añadir el transcript
+completo a ese hilo (215k → 379k caracteres en una sesión real).
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.
@@ -432,8 +438,9 @@ CLAUDE_CODEX_TRACE=1 claude-codex --resume
 ```
 
 La traza imprime `event=new`, `event=reuse`, `event=resume`, `event=compact` o
-`event=retire`, el ID nativo, el tipo de conversación (`role=primary`,
-`role=compact_summary`, etc.), una
+`event=retire` (y `event=error` con el error devuelto a Claude), el ID nativo, el
+tipo de conversación (`role=primary`, `role=side_request` para resúmenes y recaps,
+etc.), una
 huella de la identidad del host y el número de conversaciones vivas. No imprime
 prompts, resultados de herramientas ni credenciales. La caché de tokens de
 OpenAI es independiente de la persistencia del thread: conservar su ID e historial

@@ -724,7 +724,7 @@ func (b *Bridge) trace(event string, c *conversation, reason string) {
 		role = "web_search"
 	}
 	if c.auxiliary {
-		role = "compact_summary"
+		role = "side_request"
 	}
 	fmt.Fprintf(os.Stderr, "gpt-bridge: event=%s thread=%s host=%s live=%d role=%s reason=%s\n", event, c.threadID, identity, len(b.sessions), role, reason)
 }

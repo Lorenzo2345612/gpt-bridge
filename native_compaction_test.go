@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -75,5 +77,46 @@ func TestHostCompactionContinuesInFreshNativeThreadOnce(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(raw), c.threadID) {
 		t.Fatal("checkpoint does not point at the fresh thread", err)
+	}
+}
+
+func TestAwayRecapIsAnEphemeralSideRequest(t *testing.T) {
+	f := persistentFixture(t, t.TempDir())
+	body := testRequest(false)
+	body["metadata"] = M{"user_id": "away-recap"}
+	status, response := f.post(t, body)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	main := f.b.sessions[0].threadID
+	for i := 0; i < 2; i++ {
+		recap := continueRequest(body, response, fmt.Sprintf("The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences, no markdown. (%d)", i))
+		if status, result := f.post(t, recap); status != 200 {
+			t.Fatal(status, result)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(f.b.stateDir, "*", "*.json"))
+	if len(files) != 1 {
+		t.Fatal("persisted a recap as a conversation branch", files)
+	}
+	for _, c := range f.b.sessions {
+		if !c.auxiliary && c.threadID != main {
+			t.Fatal("recap opened or replaced a main conversation thread")
+		}
+	}
+	calls := 0
+	for _, rpc := range f.backends {
+		snapshot, _ := rpc.snapshot()
+		for _, call := range snapshot {
+			if call.Method == "thread/resume" {
+				t.Fatal("recap resumed a persisted thread")
+			}
+			if call.Method == "thread/start" && call.Params["ephemeral"] == true {
+				calls++
+			}
+		}
+	}
+	if calls != 2 {
+		t.Fatal("each recap must run in its own ephemeral thread", calls)
 	}
 }
