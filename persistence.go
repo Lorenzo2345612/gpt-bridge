@@ -38,6 +38,48 @@ func cachedPendingCheckpointMatches(cached cachedResponse, p *prepared) bool {
 	return saved.Expected[len(saved.Expected)-1] == hash(M{"role": "assistant", "content": response["content"]})
 }
 
+// Only receipts referenced by a committed checkpoint may be replayed. Pending
+// tools additionally need to remain the current, unanswered checkpoint response.
+func (b *Bridge) replayResponse(p *prepared, key string) ([]byte, error) {
+	if b.stateDir == "" || p.HostIdentity == "" || p.Search != nil || p.Auxiliary {
+		return nil, nil
+	}
+	dir := filepath.Join(b.stateDir, p.HostIdentity)
+	states, err := readCheckpoints(dir, p.HostIdentity)
+	if err != nil {
+		return nil, err
+	}
+	for _, state := range states {
+		for i := len(state.Lineage) - 1; i >= 0; i-- {
+			record := state.Lineage[i]
+			if record.RequestKey != key || record.ReplyHash == "" {
+				continue
+			}
+			// Digests are filenames, not arbitrary checkpoint-supplied paths.
+			if !safeReplyHash.MatchString(record.ReplyHash) {
+				return nil, fmt.Errorf("invalid response receipt digest")
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "replies", record.ReplyHash+".json"))
+			if err != nil {
+				return nil, err
+			}
+			var response M
+			if hash(string(raw)) != record.ReplyHash || decode(raw, &response) != nil || str(response["id"]) != record.MessageID {
+				return nil, fmt.Errorf("invalid response receipt")
+			}
+			if response["stop_reason"] == "tool_use" && !cachedPendingCheckpointMatches(cachedResponse{
+				data: raw, pendingThread: record.ThreadID, pendingState: state.path,
+			}, p) {
+				continue
+			}
+			return raw, nil
+		}
+	}
+	return nil, nil
+}
+
+var safeReplyHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
 func hostIdentity(value string) string {
 	if value == "" {
 		return ""
@@ -68,20 +110,32 @@ type savedPending struct {
 	PublicID string `json:"public_id"`
 	Name     string `json:"name"`
 }
+
+// Response IDs bridge Claude's journal UUIDs to a checkpoint owner. Keep the
+// producing native generation even after that checkpoint moves to a new thread.
+// Records are committed with the response state, never for merely accepted turns.
+type responseLineage struct {
+	MessageID  string `json:"message_id"`
+	ThreadID   string `json:"thread_id"`
+	RequestKey string `json:"request_key,omitempty"`
+	ReplyHash  string `json:"reply_hash,omitempty"`
+}
+
 type sessionCheckpoint struct {
-	Version        int            `json:"version"`
-	ThreadID       string         `json:"thread_id"`
-	HostIdentity   string         `json:"host_identity"`
-	Key            string         `json:"key"`
-	Expected       []string       `json:"expected"`
-	RequestHashes  []string       `json:"request_hashes,omitempty"`
-	InFlight       bool           `json:"in_flight"`
-	Pending        []savedPending `json:"pending,omitempty"`
-	Primary        bool           `json:"primary"`
-	CompactHash    string         `json:"compact_hash,omitempty"`
-	BaseSystemHash string         `json:"base_system_hash"`
-	Model          string         `json:"model"`
-	ContextWindow  int            `json:"context_window"`
+	Lineage        []responseLineage `json:"lineage,omitempty"`
+	Version        int               `json:"version"`
+	ThreadID       string            `json:"thread_id"`
+	HostIdentity   string            `json:"host_identity"`
+	Key            string            `json:"key"`
+	Expected       []string          `json:"expected"`
+	RequestHashes  []string          `json:"request_hashes,omitempty"`
+	InFlight       bool              `json:"in_flight"`
+	Pending        []savedPending    `json:"pending,omitempty"`
+	Primary        bool              `json:"primary"`
+	CompactHash    string            `json:"compact_hash,omitempty"`
+	BaseSystemHash string            `json:"base_system_hash"`
+	Model          string            `json:"model"`
+	ContextWindow  int               `json:"context_window"`
 	// Hashes of the additional-context values the native thread already holds,
 	// so a resumed executor sends only what changed. No prompt text.
 	Context map[string]string `json:"context,omitempty"`
@@ -173,15 +227,20 @@ func (c *conversation) saveState() error {
 	for _, p := range c.pending {
 		pending = append(pending, savedPending{PublicID: p.PublicID, Name: p.Name})
 	}
-	state := sessionCheckpoint{Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
-	f, err := os.CreateTemp(filepath.Dir(c.statePath), ".checkpoint-*")
+	state := sessionCheckpoint{Lineage: c.lineage, Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
+	return writePrivateState(c.statePath, encode(state))
+}
+
+// The checkpoint is the commit point for both state and response receipts.
+func writePrivateState(path string, raw []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".checkpoint-*")
 	if err != nil {
 		return err
 	}
 	temp := f.Name()
 	defer os.Remove(temp)
 	if err = f.Chmod(0600); err == nil {
-		_, err = f.Write(encode(state))
+		_, err = f.Write(raw)
 	}
 	if err == nil {
 		err = f.Sync()
@@ -193,7 +252,7 @@ func (c *conversation) saveState() error {
 	if err != nil {
 		return err
 	}
-	return replaceStateFile(temp, c.statePath)
+	return replaceStateFile(temp, path)
 }
 
 func (c *conversation) close() {

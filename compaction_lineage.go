@@ -66,12 +66,15 @@ func retainedCompactionOwner(p *prepared, candidates []compactionCandidate) (str
 }
 
 type journalLineageRecord struct {
-	Type      string          `json:"type"`
-	Subtype   string          `json:"subtype"`
-	SessionID string          `json:"sessionId"`
-	Sidechain bool            `json:"isSidechain"`
-	Summary   bool            `json:"isCompactSummary"`
-	Message   json.RawMessage `json:"message"`
+	UUID              string          `json:"uuid"`
+	ParentUUID        string          `json:"parentUuid"`
+	LogicalParentUUID string          `json:"logicalParentUuid"`
+	Type              string          `json:"type"`
+	Subtype           string          `json:"subtype"`
+	SessionID         string          `json:"sessionId"`
+	Sidechain         bool            `json:"isSidechain"`
+	Summary           bool            `json:"isCompactSummary"`
+	Message           json.RawMessage `json:"message"`
 }
 
 func journalCompactionOwner(path string, p *prepared, candidates []compactionCandidate) (string, bool) {
@@ -151,11 +154,95 @@ func journalCompactionOwner(path string, p *prepared, candidates []compactionCan
 	return owner, found
 }
 
+// Resolve only an exact boundary ancestry chain. Physical journal order and
+// similar content cannot substitute for a missing UUID edge.
+func journalExplicitCompactionOwner(path string, p *prepared, owners map[string]map[string]bool) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	type node struct{ parent, message string }
+	nodes := map[string]node{}
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 64<<10), 64<<20)
+	boundary := ""
+	selected, matched := "", false
+	for scan.Scan() {
+		var record journalLineageRecord
+		if json.Unmarshal(scan.Bytes(), &record) != nil ||
+			(record.SessionID != "" && record.SessionID != p.ClaudeSessionID) ||
+			(p.ClaudeAgentID == "" && record.Sidechain) {
+			continue
+		}
+		if record.Type == "system" && record.Subtype == "compact_boundary" {
+			boundary = fallback(record.LogicalParentUUID, record.ParentUUID)
+		}
+		var message M
+		_ = decode(record.Message, &message)
+		if record.Summary && compactionHash([]any{message}) == p.CompactHash {
+			seen := map[string]bool{}
+			for uuid := boundary; uuid != "" && !seen[uuid]; {
+				seen[uuid] = true
+				n, ok := nodes[uuid]
+				if !ok {
+					break
+				}
+				if ids := owners[n.message]; len(ids) > 0 {
+					if len(ids) != 1 {
+						return "", true
+					}
+					for id := range ids {
+						if matched && selected != id {
+							return "", true
+						}
+						selected, matched = id, true
+					}
+					break
+				}
+				// An unrecorded real response may belong to a newer fork. Do
+				// not promote an older ancestor into explicit ownership proof.
+				if n.message != "" {
+					break
+				}
+				uuid = n.parent
+			}
+		}
+		if record.UUID != "" {
+			n := node{parent: record.ParentUUID}
+			if record.Type == "assistant" && message["role"] == "assistant" && message["model"] != "<synthetic>" {
+				n.message = str(message["id"])
+			}
+			if old, exists := nodes[record.UUID]; exists && old != n {
+				return "", true
+			}
+			nodes[record.UUID] = n
+		}
+	}
+	if scan.Err() != nil {
+		return "", false
+	}
+	return selected, matched
+}
+
 func (b *Bridge) identifyCompaction(p *prepared) (string, error) {
 	byID := map[string]compactionCandidate{}
+	owners := map[string]map[string]bool{}
+	addLineage := func(id string, records []responseLineage) {
+		for _, record := range records {
+			if record.MessageID == "" || record.ThreadID == "" {
+				continue
+			}
+			if owners[record.MessageID] == nil {
+				owners[record.MessageID] = map[string]bool{}
+			}
+			owners[record.MessageID][id] = true
+		}
+	}
 	for _, c := range b.sessions {
 		if c.hostIdentity == p.HostIdentity && !c.auxiliary && !c.search {
 			byID[c.threadID] = compactionCandidate{c.threadID, c.expected}
+			addLineage(c.threadID, c.lineage)
 		}
 	}
 	if b.stateDir != "" {
@@ -166,6 +253,7 @@ func (b *Bridge) identifyCompaction(p *prepared) (string, error) {
 		for _, s := range states {
 			if _, live := byID[s.ThreadID]; !live {
 				byID[s.ThreadID] = compactionCandidate{s.ThreadID, s.Expected}
+				addLineage(s.ThreadID, s.Lineage)
 			}
 		}
 	}
@@ -173,11 +261,9 @@ func (b *Bridge) identifyCompaction(p *prepared) (string, error) {
 	for _, c := range byID {
 		candidates = append(candidates, c)
 	}
-	if id, _ := retainedCompactionOwner(p, candidates); id != "" {
-		return id, nil
-	}
 	if !safeClaudeID.MatchString(p.ClaudeSessionID) || (p.ClaudeAgentID != "" && !safeClaudeID.MatchString(p.ClaudeAgentID)) {
-		return "", nil
+		id, _ := retainedCompactionOwner(p, candidates)
+		return id, nil
 	}
 	pattern := filepath.Join(claudeConfig(), "projects", "*", p.ClaudeSessionID+".jsonl")
 	if p.ClaudeAgentID != "" {
@@ -188,6 +274,21 @@ func (b *Bridge) identifyCompaction(p *prepared) (string, error) {
 		return "", err
 	}
 	var selected string
+	explicit := false
+	for _, path := range paths {
+		if id, matched := journalExplicitCompactionOwner(path, p, owners); matched {
+			if id == "" || (explicit && selected != id) {
+				return "", nil
+			}
+			selected, explicit = id, true
+		}
+	}
+	if explicit {
+		return selected, nil
+	}
+	if id, _ := retainedCompactionOwner(p, candidates); id != "" {
+		return id, nil
+	}
 	for _, path := range paths {
 		if id, matched := journalCompactionOwner(path, p, candidates); matched {
 			if id == "" || (selected != "" && selected != id) {

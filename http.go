@@ -126,6 +126,15 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	response := M{"id": uid("msg_"), "type": "message", "role": "assistant", "model": p.Model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": M{"input_tokens": 0, "output_tokens": 0}}
+	if cached != nil {
+		var old M
+		if e = decode(cached, &old); e != nil {
+			fail(e)
+			return
+		}
+		// A replay is the same response, including its durable lineage identity.
+		response["id"] = old["id"]
+	}
 	if boolean(body["stream"]) {
 		streaming = true
 		w.Header().Set("Content-Type", "text/event-stream")

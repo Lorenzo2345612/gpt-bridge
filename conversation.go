@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,7 @@ type conversation struct {
 	toolOutputTokenLimit          int
 	cwd                           string
 	freshThread                   bool
+	lineage                       []responseLineage
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
@@ -109,6 +111,9 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 	c := &conversation{auxiliary: p.Auxiliary, baseSystemHash: p.BaseSystemHash, compactHash: p.CompactHash, contextWindow: p.ContextWindow, model: p.Model, hostIdentity: p.HostIdentity, search: p.Search != nil, rpc: rpc, cwd: cwd, key: key, threadID: id, effort: p.Effort, names: p.Names, lastUsed: time.Now(), usage: M{"input_tokens": 0, "output_tokens": 0}}
 	if saved != nil {
 		c.expected = append([]string{}, saved.Expected...)
+		c.lineage = append([]responseLineage{}, saved.Lineage...)
+		c.inFlight = saved.InFlight
+		c.requestHashes = append([]string{}, saved.RequestHashes...)
 		c.primary = saved.Primary
 		c.compactHash = saved.CompactHash
 		for key, h := range saved.Context {
@@ -515,6 +520,11 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 			return nil, p, requestKey, cached.data, nil
 		}
 	}
+	if replay, err := b.replayResponse(p, requestKey); err != nil {
+		return nil, nil, "", nil, err
+	} else if replay != nil {
+		return nil, p, requestKey, replay, nil
+	}
 	for _, c := range b.sessions {
 		compatible := (c.key == key || (p.HostIdentity != "" && c.hostIdentity == p.HostIdentity && !c.search && p.Search == nil && c.contextWindow == p.ContextWindow)) && c.auxiliary == p.Auxiliary
 		if compatible && prefixMatches(p.Hashes, c.expected) {
@@ -749,12 +759,28 @@ func (b *Bridge) commit(c *conversation, p *prepared, key string, response M) er
 	c.inFlight = false
 	c.requestHashes = nil
 	c.compactHash = p.CompactHash
+	raw := encode(response)
+	if id := str(response["id"]); id != "" && !c.auxiliary && !c.search {
+		record := responseLineage{MessageID: id, ThreadID: c.threadID}
+		if c.statePath != "" {
+			// Store the receipt first. Until saveState references its digest,
+			// an interrupted write cannot authorize replay of this response.
+			record.RequestKey, record.ReplyHash = key, hash(string(raw))
+			dir := filepath.Join(filepath.Dir(c.statePath), "replies")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				return err
+			}
+			if err := writePrivateState(filepath.Join(dir, record.ReplyHash+".json"), raw); err != nil {
+				return err
+			}
+		}
+		c.lineage = append(c.lineage, record)
+	}
 	if err := c.saveState(); err != nil {
 		return err
 	}
 	// Bound cached response memory as well as entry count. Cache only the response,
 	// never another copy of a potentially multi-megabyte request transcript.
-	raw := encode(response)
 	const maxCacheBytes = 64 << 20
 	if len(raw) > maxCacheBytes {
 		return nil

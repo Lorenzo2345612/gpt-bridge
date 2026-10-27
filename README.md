@@ -79,6 +79,31 @@ Si el historial local demuestra el linaje, se conserva el checkpoint correcto;
 si sigue siendo ambiguo, se continúa desde el resumen en un hilo independiente.
 No se fusionan historiales ni se repiten herramientas de las ramas anteriores.
 
+El linaje explícito registra el `message.id` de cada respuesta confirmada y el
+thread nativo que la produjo, dentro de la misma escritura atómica del checkpoint.
+Al compactar, el puente cruza esos IDs con los UUID y la cadena `parentUuid` del
+journal, partiendo de `logicalParentUuid` del boundary. Esta prueba tiene prioridad
+sobre las huellas de contenido. Los reintentos en caché conservan el mismo ID.
+El registro de linaje no contiene texto ni atribuye turnos que solo fueron aceptados.
+Los checkpoints anteriores siguen siendo válidos; si faltan IDs o enlaces del
+journal se conservan los mecanismos de inferencia y la recuperación aislada.
+Identificar el propietario no conserva la caché del thread antiguo: compactar
+sigue creando un thread nativo nuevo para liberar contexto.
+
+Las respuestas confirmadas también se guardan en archivos privados dentro de
+`replies/`, separados del checkpoint, para reproducir un reintento idéntico tras
+reiniciar sin iniciar otra inferencia ni cambiar los IDs de herramientas. Estos
+archivos sí contienen la respuesta del modelo y los argumentos de herramientas;
+no contienen otra copia del request ni de los resultados de herramientas. Se
+conservan junto con la sesión, sin una política adicional de caducidad. El
+checkpoint confirma su digest mediante escritura atómica; un archivo huérfano no
+autoriza su reproducción. Si un recibo confirmado falta o está corrupto, el puente
+falla sin repetir silenciosamente la inferencia. Los checkpoints antiguos siguen
+siendo reanudables, pero no permiten reconstruir respuestas que nunca se guardaron.
+Los marcadores de requests en curso también se restauran antes de escribir al
+reabrir una conversación. Esto no garantiza reproducción de un stream parcial
+interrumpido antes de confirmar su respuesta.
+
 ## Instalación y uso
 
 El runtime es un ejecutable nativo en **Go**, sin Python ni dependencias de
