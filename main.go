@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.12"
+const bridgeVersion = "0.6.13"
 
 type options struct {
 	serve, check, models, version      bool

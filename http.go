@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,9 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	streaming := false
 	fail := func(err error) {
 		status := errorStatus(err)
+		if os.Getenv("CLAUDE_CODEX_TRACE") == "1" {
+			fmt.Fprintf(os.Stderr, "gpt-bridge: event=error status=%d error=%q\n", status, err.Error())
+		}
 		kind := "invalid_request_error"
 		if status >= 500 {
 			kind = "api_error"

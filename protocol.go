@@ -153,6 +153,16 @@ func imageURL(v any) (string, error) {
 	}
 	return "", bad("Images require supported base64 data or an HTTPS URL")
 }
+
+// ToolSearch answers with tool_reference blocks. Claude adds the definition to
+// the next request's catalog, which reaches the model as updated host context.
+func toolReferenceText(b M) (string, error) {
+	name := str(b["tool_name"])
+	if name == "" {
+		return "", bad("Tool references require a tool_name")
+	}
+	return "Tool loaded and now in the host tool catalog: " + name, nil
+}
 func toolResultContent(v any) ([]any, error) {
 	bs, err := blocks(v)
 	if err != nil {
@@ -173,6 +183,12 @@ func toolResultContent(v any) ([]any, error) {
 				return nil, err
 			}
 			r = append(r, M{"type": "inputImage", "imageUrl": u})
+		case "tool_reference":
+			text, err := toolReferenceText(b)
+			if err != nil {
+				return nil, err
+			}
+			r = append(r, M{"type": "inputText", "text": text})
 		default:
 			return nil, bad("Unsupported tool result block")
 		}
@@ -230,6 +246,12 @@ func transcriptInput(messages []any) ([]any, error) {
 						entries = append(entries, x)
 					case "text":
 						entries = append(entries, p)
+					case "tool_reference":
+						text, e := toolReferenceText(p)
+						if e != nil {
+							return nil, e
+						}
+						entries = append(entries, M{"type": "text", "text": text})
 					default:
 						return nil, bad("Unsupported history tool result")
 					}
@@ -304,8 +326,24 @@ func hostContext(messages, tools []any) ([]any, []string, []any, error) {
 	}
 	lastUser := -1
 	for i, v := range messages {
-		if object(v)["role"] == "user" {
+		m := object(v)
+		if m["role"] == "user" {
 			lastUser = i
+		}
+		// ToolSearch loads deferred tools by returning tool_reference blocks;
+		// Claude keeps sending them with defer_loading and expects the API to
+		// activate every referenced tool.
+		for _, v := range array(m["content"]) {
+			result := object(v)
+			if result["type"] != "tool_result" {
+				continue
+			}
+			for _, v := range array(result["content"]) {
+				ref := object(v)
+				if name := str(ref["tool_name"]); ref["type"] == "tool_reference" && definitions[name] != nil {
+					active[name] = true
+				}
+			}
 		}
 	}
 	conversation := []any{}

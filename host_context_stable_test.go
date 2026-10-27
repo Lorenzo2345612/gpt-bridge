@@ -75,3 +75,34 @@ func TestHostContextRepeatedParagraphsStayLossless(t *testing.T) {
 		t.Fatal("Repeated host chunks were not reconstructed")
 	}
 }
+
+// ToolSearch answers with tool_reference blocks. Rejecting them failed the
+// request, discarded the live executor and re-sent the whole host context to a
+// resumed thread.
+func TestToolSearchReferencesAreValidToolResults(t *testing.T) {
+	items, err := toolResultContent([]any{M{"type": "tool_reference", "tool_name": "mcp__portal__list"}})
+	if err != nil || len(items) != 1 || !strings.Contains(str(object(items[0])["text"]), "mcp__portal__list") {
+		t.Fatal(items, err)
+	}
+	if _, err := toolResultContent([]any{M{"type": "tool_reference"}}); err == nil {
+		t.Fatal("accepted a reference without a name")
+	}
+	history, err := transcriptInput([]any{M{"role": "user", "content": []any{M{"type": "tool_result", "tool_use_id": "toolu_1", "content": []any{M{"type": "tool_reference", "tool_name": "mcp__portal__list"}}}}}})
+	if err != nil || !strings.Contains(str(object(history[0])["text"]), "mcp__portal__list") {
+		t.Fatal(history, err)
+	}
+}
+
+func TestToolSearchReferencesActivateDeferredTools(t *testing.T) {
+	deferred := M{"name": "mcp__portal__list", "description": "List.", "input_schema": M{"type": "object"}, "defer_loading": true}
+	other := M{"name": "mcp__portal__other", "description": "Other.", "input_schema": M{"type": "object"}, "defer_loading": true}
+	messages := []any{
+		M{"role": "user", "content": "load it"},
+		M{"role": "assistant", "content": []any{M{"type": "tool_use", "id": "toolu_1", "name": "ToolSearch", "input": M{}}}},
+		M{"role": "user", "content": []any{M{"type": "tool_result", "tool_use_id": "toolu_1", "content": []any{M{"type": "tool_reference", "tool_name": "mcp__portal__list"}}}}},
+	}
+	_, _, tools, err := hostContext(messages, []any{deferred, other})
+	if err != nil || len(tools) != 1 || object(tools[0])["name"] != "mcp__portal__list" {
+		t.Fatal(tools, err)
+	}
+}

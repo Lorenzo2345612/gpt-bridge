@@ -344,6 +344,12 @@ estimación cuenta 4 caracteres por token, 800 tokens por imagen y respeta el
 truncado de Codex (`truncation_policy`, 10k tokens por salida de herramienta en
 los modelos actuales); se reemplaza por el valor real en cuanto Codex lo publica.
 
+Desde 0.6.13, los resultados de `ToolSearch` (`tool_reference`) se aceptan y
+activan la herramienta diferida que referencian, como hace la API de Anthropic.
+Antes el request fallaba, el puente descartaba el ejecutor y reanudaba el hilo en
+otro proceso que reenviaba todo el contexto del host. Con `CLAUDE_CODEX_TRACE=1`
+también se registran los errores devueltos a Claude.
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.
