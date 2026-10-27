@@ -89,21 +89,30 @@ func (c *conversation) nativeCompacted() {
 	c.sentContext = nil
 }
 
-// contextAdditions estimates the additional-context values Codex will append:
-// only keys whose value differs from the last one sent.
-func (c *conversation) contextAdditions() {
-	if c.sentContext == nil {
-		c.sentContext = map[string]string{}
-	}
-	tokens := 0
+// contextDelta returns the additional-context keys the native thread does not
+// hold yet. Codex only skips unchanged keys within one app-server process, so a
+// resumed executor (restart, idle unload, error recovery) re-sent the whole
+// host context; the bridge tracks it per thread instead. sent records the
+// delta once Codex accepted it.
+func (c *conversation) contextDelta() (M, func()) {
+	delta, hashes, tokens := M{}, map[string]string{}, 0
 	for key, v := range c.currentContext {
 		value := str(object(v)["value"])
-		if c.sentContext[key] != value {
+		if h := hash(value); c.sentContext[key] != h {
+			delta[key] = v
+			hashes[key] = h
 			tokens += len(value) / estimatedCharsPerToken
-			c.sentContext[key] = value
 		}
 	}
-	c.addUnmeasured(tokens)
+	return delta, func() {
+		if c.sentContext == nil {
+			c.sentContext = map[string]string{}
+		}
+		for key, h := range hashes {
+			c.sentContext[key] = h
+		}
+		c.addUnmeasured(tokens)
+	}
 }
 
 func (c *conversation) reportedUsage() M {

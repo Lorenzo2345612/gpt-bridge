@@ -261,3 +261,39 @@ func TestIdleAgentBranchesReleaseAllExecutorsAndKeepOwnIDs(t *testing.T) {
 		}
 	}
 }
+
+// Codex skips unchanged additional context only within one app-server process.
+// A resumed executor must not re-append the host instructions and tool catalog
+// the thread already holds (~120k tokens per idle unload in real sessions).
+func TestResumedExecutorSendsOnlyChangedHostContext(t *testing.T) {
+	f := persistentFixture(t, t.TempDir())
+	body := testRequest(false)
+	body["system"] = hostPrompt("gitStatus: clean")
+	body["metadata"] = M{"user_id": "idle-host-context"}
+	status, response := f.post(t, body)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	first, _ := f.rpc().snapshot()
+	full := len(object(first[len(first)-1].Params["additionalContext"]))
+	id := f.b.sessions[0].threadID
+	expireFixtureConversation(f)
+	next := continueRequest(body, response, "Continue after idle unload")
+	next["system"] = hostPrompt("gitStatus: modified a.go")
+	status, response = f.post(t, next)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	calls, _ := f.rpc().snapshot()
+	if calls[0].Method != "thread/resume" {
+		t.Fatal("did not resume", calls[0].Method)
+	}
+	start := calls[len(calls)-1]
+	sent := len(object(start.Params["additionalContext"]))
+	if start.Method != "turn/start" || full < 20 || sent > 8 {
+		t.Fatalf("resumed executor sent %d of %d host context keys", sent, full)
+	}
+	if !strings.Contains(contextText(threadContext(id), "system"), "gitStatus: modified a.go") {
+		t.Fatal("thread lost the updated host instructions")
+	}
+}

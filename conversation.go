@@ -106,6 +106,12 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 		c.expected = append([]string{}, saved.Expected...)
 		c.primary = saved.Primary
 		c.compactHash = saved.CompactHash
+		for key, h := range saved.Context {
+			if c.sentContext == nil {
+				c.sentContext = map[string]string{}
+			}
+			c.sentContext[key] = h
+		}
 		c.recoveredPending = saved.Pending
 		c.resetHistory = !prefixMatches(p.Hashes, c.expected)
 	}
@@ -191,11 +197,12 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 			if inputChars(inputs) > maxTurnChars {
 				return bad("Host steering exceeds Codex's character limit; compact the conversation before continuing")
 			}
-			if _, e = c.rpc.Call(ctx, "turn/steer", M{"threadId": c.threadID, "expectedTurnId": c.pending[0].TurnID, "input": inputs, "additionalContext": c.currentContext}); e != nil {
+			delta, sent := c.contextDelta()
+			if _, e = c.rpc.Call(ctx, "turn/steer", M{"threadId": c.threadID, "expectedTurnId": c.pending[0].TurnID, "input": inputs, "additionalContext": delta}); e != nil {
 				return e
 			}
 			c.addUnmeasured(estimateItems(inputs))
-			c.contextAdditions()
+			sent()
 		}
 		for _, pending := range c.pending {
 			if e := c.rpc.Send(M{"id": pending.RPCID, "result": outputs[pending.PublicID]}); e != nil {
@@ -234,8 +241,9 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		inputs = []any{M{"type": "text", "text": "Continue the Claude Code conversation provided immediately above. Respond to its latest user message. Do not repeat historical tool calls."}}
 	}
 	params := M{"threadId": c.threadID, "input": inputs, "model": p.Model, "sandboxPolicy": M{"type": "externalSandbox", "networkAccess": "enabled"}}
+	sent := func() {}
 	if !c.search {
-		params["additionalContext"] = c.currentContext
+		params["additionalContext"], sent = c.contextDelta()
 	}
 	if c.effort != "" {
 		params["effort"] = c.effort
@@ -243,9 +251,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	_, e = c.rpc.Call(ctx, "turn/start", params)
 	if e == nil {
 		c.addUnmeasured(appended)
-		if !c.search {
-			c.contextAdditions()
-		}
+		sent()
 		c.model = p.Model
 		c.resetHistory = false
 		c.compactHash = p.CompactHash
@@ -339,8 +345,13 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 						return e
 					}
 				}
+			case "thread/compacted":
+				c.sentContext = nil
 			case "item/completed":
 				item := object(p["item"])
+				if item["type"] == "contextCompaction" {
+					c.sentContext = nil
+				}
 				if item["type"] == "webSearch" {
 					searched = true
 				}

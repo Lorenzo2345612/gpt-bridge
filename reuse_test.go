@@ -28,7 +28,7 @@ func TestConfigurationUpdatesReuseOneNativeThread(t *testing.T) {
 		}
 		calls, _ := f.rpc().snapshot()
 		last := calls[len(calls)-1]
-		if last.Method != "turn/steer" || !strings.Contains(contextText(object(last.Params["additionalContext"]), "system"), fmt.Sprintf("New host rule %d", i)) {
+		if last.Method != "turn/steer" || !strings.Contains(contextText(threadContext(str(last.Params["threadId"])), "system"), fmt.Sprintf("New host rule %d", i)) {
 			t.Fatal("Lost current instructions", last.Method)
 		}
 		body["messages"] = append(array(body["messages"]), M{"role": "assistant", "content": final["content"]}, M{"role": "user", "content": "Call the tool again"})

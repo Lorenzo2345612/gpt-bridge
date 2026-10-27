@@ -69,6 +69,32 @@ type fakeRPC struct {
 	fail                   bool
 }
 
+// Like Codex, a thread's history keeps every additional-context key it
+// received, across executors (resume) as well.
+var fakeThreads = struct {
+	sync.Mutex
+	context map[string]M
+}{context: map[string]M{}}
+
+func threadContext(thread string) M {
+	fakeThreads.Lock()
+	defer fakeThreads.Unlock()
+	return copyMap(fakeThreads.context[thread])
+}
+
+func mergeThreadContext(p M) M {
+	fakeThreads.Lock()
+	defer fakeThreads.Unlock()
+	thread := str(p["threadId"])
+	if fakeThreads.context[thread] == nil {
+		fakeThreads.context[thread] = M{}
+	}
+	for k, v := range object(p["additionalContext"]) {
+		fakeThreads.context[thread][k] = v
+	}
+	return copyMap(fakeThreads.context[thread])
+}
+
 func newFake() *fakeRPC {
 	return &fakeRPC{events: make(chan M, 64), done: make(chan struct{}), toolsPerTurn: 1}
 }
@@ -76,6 +102,9 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, rpcCall{method, p})
+	if method == "turn/steer" {
+		mergeThreadContext(p)
+	}
 	switch method {
 	case "thread/start":
 		if specs := array(p["dynamicTools"]); len(specs) > 0 {
@@ -90,9 +119,10 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 	case "thread/compact/start":
 		f.events <- M{"method": "turn/completed", "params": M{"threadId": p["threadId"], "turn": M{"id": "compact-test", "status": "completed"}}}
 	case "turn/start":
+		merged := mergeThreadContext(p)
 		var active []any
 		if f.tool == dispatcherName {
-			_ = decode([]byte(contextText(object(p["additionalContext"]), "tools")), &active)
+			_ = decode([]byte(contextText(merged, "tools")), &active)
 		}
 		if f.tool != "" && (f.tool != dispatcherName || len(active) > 0) {
 			f.received = 0

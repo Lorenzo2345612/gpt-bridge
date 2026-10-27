@@ -82,8 +82,11 @@ type sessionCheckpoint struct {
 	BaseSystemHash string         `json:"base_system_hash"`
 	Model          string         `json:"model"`
 	ContextWindow  int            `json:"context_window"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	path           string
+	// Hashes of the additional-context values the native thread already holds,
+	// so a resumed executor sends only what changed. No prompt text.
+	Context   map[string]string `json:"context,omitempty"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	path      string
 }
 
 func compactionHash(messages []any) string {
@@ -166,7 +169,7 @@ func (c *conversation) saveState() error {
 	for _, p := range c.pending {
 		pending = append(pending, savedPending{PublicID: p.PublicID, Name: p.Name})
 	}
-	state := sessionCheckpoint{Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, UpdatedAt: time.Now()}
+	state := sessionCheckpoint{Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, UpdatedAt: time.Now()}
 	f, err := os.CreateTemp(filepath.Dir(c.statePath), ".checkpoint-*")
 	if err != nil {
 		return err

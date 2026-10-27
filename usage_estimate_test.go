@@ -34,13 +34,30 @@ func TestToolUseUsageIncludesResultsCodexHasNotMeasured(t *testing.T) {
 	}
 }
 
-func TestContextAdditionsCountOnlyChangedKeys(t *testing.T) {
+func TestContextDeltaSendsOnlyKeysTheThreadLacks(t *testing.T) {
 	c := &conversation{currentContext: M{"a": M{"value": string(make([]byte, 4000))}, "b": M{"value": "xxxx"}}}
-	c.contextAdditions()
+	delta, sent := c.contextDelta()
+	if len(delta) != 2 {
+		t.Fatal(delta)
+	}
+	sent()
 	c.currentContext = M{"a": M{"value": string(make([]byte, 4000))}, "b": M{"value": string(make([]byte, 800))}}
-	c.contextAdditions()
+	delta, sent = c.contextDelta()
+	if len(delta) != 1 || delta["b"] == nil {
+		t.Fatal(delta)
+	}
+	sent()
 	if c.unmeasured[1] != 1000+1+200 {
 		t.Fatal(c.unmeasured)
+	}
+	// A resumed executor restores the hashes from its checkpoint.
+	resumed := &conversation{sentContext: c.sentContext, currentContext: c.currentContext}
+	if delta, _ := resumed.contextDelta(); len(delta) != 0 {
+		t.Fatal("resume re-sent unchanged host context", delta)
+	}
+	c.nativeCompacted()
+	if delta, _ := c.contextDelta(); len(delta) != 2 {
+		t.Fatal("compaction must re-send the host context")
 	}
 }
 

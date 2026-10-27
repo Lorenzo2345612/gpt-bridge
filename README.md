@@ -350,6 +350,14 @@ Antes el request fallaba, el puente descartaba el ejecutor y reanudaba el hilo e
 otro proceso que reenviaba todo el contexto del host. Con `CLAUDE_CODEX_TRACE=1`
 también se registran los errores devueltos a Claude.
 
+Desde 0.6.14, el puente decide qué claves de contexto enviar comparando con lo
+que el hilo nativo ya contiene, y guarda esos hashes (sin texto del prompt) en el
+checkpoint. Codex solo omite claves sin cambios dentro de un mismo proceso
+`app-server`, así que reanudar el hilo tras una descarga por inactividad, un
+reinicio o un error volvía a añadir todo el prompt y el catálogo (~77k tokens en
+una prueba, ~120k en una sesión real). Si Codex compacta el hilo, el contexto se
+envía completo una vez.
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.
