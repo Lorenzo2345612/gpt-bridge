@@ -51,7 +51,11 @@ func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key str
 	return openConversation(ctx, rpc, p, cwd, key, nil)
 }
 func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string, saved *sessionCheckpoint) (*conversation, error) {
-	config := M{"project_doc_max_bytes": 0, "web_search": "disabled"}
+	// Claude's system prompt already carries the environment, skills and
+	// permissions. Codex's own copies are dead weight in every native thread
+	// (and after every compaction); process-level features.* flags do not
+	// remove them.
+	config := M{"project_doc_max_bytes": 0, "web_search": "disabled", "include_permissions_instructions": false, "include_collaboration_mode_instructions": false, "include_apps_instructions": false, "include_environment_context": false, "skills": M{"include_instructions": false}}
 	instructions := hostInstructions + dispatcherInstructions
 	specs := dispatcherSpecs()
 	if p.Search != nil {

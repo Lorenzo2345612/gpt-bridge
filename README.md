@@ -326,6 +326,15 @@ de herramienta. Las esperas sin checkpoint permanecen residentes. Antes de
 descargar se confirma el checkpoint; si no se puede guardar, el proceso permanece
 disponible.
 
+Desde 0.6.11, las instrucciones y el catálogo de herramientas de Claude se envían
+a Codex con claves estables: cada fragmento del prompt se identifica por su
+contenido y cada herramienta por su nombre. Codex solo reenvía las claves cuyo
+valor cambió, así que un cambio en `gitStatus` o en una herramienta ya no copia de
+nuevo todo el prompt y el catálogo al historial nativo, que antes crecía decenas
+de miles de tokens por turno y adelantaba la compactación. Los hilos tampoco
+reciben las instrucciones propias de Codex sobre skills, permisos, modo de
+colaboración y entorno, que Claude ya aporta.
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.
