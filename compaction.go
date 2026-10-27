@@ -33,7 +33,7 @@ func (c *conversation) compactNative(ctx context.Context) error {
 				if turn["status"] != "completed" {
 					return upstream("Codex native compaction failed: %s", encode(turn["error"]))
 				}
-				c.usage = M{"input_tokens": 0, "output_tokens": 0}
+				c.nativeCompacted()
 				return nil
 			case "error":
 				if !boolean(p["willRetry"]) {

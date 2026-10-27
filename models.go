@@ -161,6 +161,9 @@ func enrichCatalog(catalog []M, path string) {
 		if v, exists := info["effective_context_window_percent"]; exists {
 			percent = integer(v)
 		}
+		if policy := object(info["truncation_policy"]); policy["mode"] == "tokens" && integer(policy["limit"]) > 0 {
+			m["toolOutputTokenLimit"] = integer(policy["limit"])
+		}
 		if maximum > 0 && percent > 0 && percent <= 100 {
 			m["contextWindow"] = info["context_window"]
 			m["maxContextWindow"] = maximum

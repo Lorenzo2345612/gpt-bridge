@@ -485,6 +485,7 @@ type prepared struct {
 	Messages                              []any
 	Hashes                                []string
 	ContextWindow, EffectiveContextWindow int
+	ToolOutputTokenLimit                  int
 }
 
 func prepare(body M, def string, aliases map[string]string) (*prepared, error) {

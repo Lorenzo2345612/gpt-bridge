@@ -335,6 +335,15 @@ de miles de tokens por turno y adelantaba la compactación. Los hilos tampoco
 reciben las instrucciones propias de Codex sobre skills, permisos, modo de
 colaboración y entorno, que Claude ya aporta.
 
+Desde 0.6.12, el uso de tokens que recibe Claude incluye una estimación de lo
+que Codex aún no ha medido. Codex publica el consumo de una muestra solo después
+de recibir el resultado de su herramienta, así que cada respuesta `tool_use`
+llevaba el consumo de la muestra anterior y la compactación automática de Claude
+iba un resultado de herramienta por detrás (y podía pasarse del umbral). La
+estimación cuenta 4 caracteres por token, 800 tokens por imagen y respeta el
+truncado de Codex (`truncation_policy`, 10k tokens por salida de herramienta en
+los modelos actuales); se reemplaza por el valor real en cuanto Codex lo publica.
+
 `--idle-timeout N` configura los segundos de inactividad; `--idle-timeout 0`
 desactiva esta limpieza. El número de conversaciones simultáneas sigue sin máximo
 por defecto: `--max-sessions N` fija uno y `--max-sessions 0` lo deja ilimitado.

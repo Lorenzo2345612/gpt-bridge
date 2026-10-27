@@ -45,6 +45,11 @@ type conversation struct {
 	recoveredPending      []savedPending
 	requestHashes         []string
 	inFlight              bool
+	// See usage_estimate.go.
+	unmeasured                    map[int]int
+	samplesEnded, samplesMeasured int
+	sentContext                   map[string]string
+	toolOutputTokenLimit          int
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
@@ -124,6 +129,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		}
 	}
 	c.requestHashes = append([]string{}, p.Hashes...)
+	c.toolOutputTokenLimit = p.ToolOutputTokenLimit
 	c.inFlight = true
 	if err := c.saveState(); err != nil {
 		return err
@@ -188,11 +194,14 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 			if _, e = c.rpc.Call(ctx, "turn/steer", M{"threadId": c.threadID, "expectedTurnId": c.pending[0].TurnID, "input": inputs, "additionalContext": c.currentContext}); e != nil {
 				return e
 			}
+			c.addUnmeasured(estimateItems(inputs))
+			c.contextAdditions()
 		}
 		for _, pending := range c.pending {
 			if e := c.rpc.Send(M{"id": pending.RPCID, "result": outputs[pending.PublicID]}); e != nil {
 				return e
 			}
+			c.addUnmeasured(c.estimateToolOutput(array(outputs[pending.PublicID]["contentItems"])))
 		}
 		c.pending = nil
 		c.contextSent()
@@ -217,6 +226,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	if e != nil {
 		return e
 	}
+	appended := estimateItems(inputs)
 	if inputChars(inputs) > maxTurnChars {
 		if _, e = c.rpc.Call(ctx, "thread/inject_items", M{"threadId": c.threadID, "items": historyItems(inputs)}); e != nil {
 			return e
@@ -232,6 +242,10 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	}
 	_, e = c.rpc.Call(ctx, "turn/start", params)
 	if e == nil {
+		c.addUnmeasured(appended)
+		if !c.search {
+			c.contextAdditions()
+		}
 		c.model = p.Model
 		c.resetHistory = false
 		c.compactHash = p.CompactHash
@@ -266,7 +280,8 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				return e
 			}
 		case <-batch:
-			return emit("done", M{"reason": "tool_use", "usage": c.usage})
+			c.sampleEnded()
+			return emit("done", M{"reason": "tool_use", "usage": c.reportedUsage()})
 		case msg := <-c.rpc.Events():
 			method := str(msg["method"])
 			p := object(msg["params"])
@@ -298,6 +313,7 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				if name == "" {
 					return upstream("Codex requested an unknown host tool")
 				}
+				c.addUnmeasured(len(encode(args)) / estimatedCharsPerToken)
 				publicID := uid("toolu_")
 				c.pending = append(c.pending, pendingTool{RPCID: id, PublicID: publicID, TurnID: str(p["turnId"]), Name: name})
 				if err := c.saveState(); err != nil {
@@ -348,7 +364,7 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 					input = 0
 				}
 				c.actualContextWindow = integer(u["modelContextWindow"])
-				c.usage = M{"input_tokens": input, "output_tokens": integer(last["outputTokens"]), "cache_read_input_tokens": cached}
+				c.sampleMeasured(M{"input_tokens": input, "output_tokens": integer(last["outputTokens"]), "cache_read_input_tokens": cached})
 			case "turn/completed":
 				turn := object(p["turn"])
 				if turn["status"] != "completed" {
@@ -361,7 +377,8 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				if c.search && !searched {
 					return upstream("Codex web search completed without executing a search; retry the request")
 				}
-				return emit("done", M{"reason": "end_turn", "usage": c.usage})
+				c.turnEnded()
+				return emit("done", M{"reason": "end_turn", "usage": c.reportedUsage()})
 			case "error":
 				if !boolean(p["willRetry"]) {
 					return upstream("Codex: %s", fallback(str(object(p["error"])["message"]), "upstream error"))
@@ -449,6 +466,7 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 		percent = 95
 	}
 	p.EffectiveContextWindow = p.ContextWindow * percent / 100
+	p.ToolOutputTokenLimit = integer(info["toolOutputTokenLimit"])
 	key := hash(M{"search": p.Search, "system": p.System, "specs": p.Specs, "model": p.Model, "effort": p.Effort, "context_window": p.ContextWindow, "host_identity": object(body["metadata"])["user_id"]})
 	requestKey := hash(M{"key": key, "messages": p.Hashes})
 	b.mu.Lock()
