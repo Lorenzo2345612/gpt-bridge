@@ -159,6 +159,7 @@ type sessionCheckpoint struct {
 	Pending         []savedPending    `json:"pending,omitempty"`
 	Primary         bool              `json:"primary"`
 	CompactHash     string            `json:"compact_hash,omitempty"`
+	Overflow        bool              `json:"overflow,omitempty"`
 	BaseSystemHash  string            `json:"base_system_hash"`
 	Model           string            `json:"model"`
 	ContextWindow   int               `json:"context_window"`
@@ -253,7 +254,7 @@ func (c *conversation) saveState() error {
 	for _, p := range c.pending {
 		pending = append(pending, savedPending{PublicID: p.PublicID, Name: p.Name})
 	}
-	state := sessionCheckpoint{RetentionDays: c.retentionDays, ClaudeSessionID: c.claudeSessionID, Lineage: c.lineage, Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
+	state := sessionCheckpoint{RetentionDays: c.retentionDays, ClaudeSessionID: c.claudeSessionID, Lineage: c.lineage, Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, Overflow: c.overflow, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
 	return writePrivateState(c.statePath, encode(state))
 }
 

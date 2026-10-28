@@ -81,3 +81,47 @@ func compactionRequest(messages []any) bool {
 	}
 	return false
 }
+
+// recoveryShare caps how much of the window a recovered host view may push an
+// existing native thread to. Above it Codex's own remote compaction no longer
+// fits and the thread fails every later turn, so continue in a fresh thread
+// from the host view instead (the old thread stays on disk).
+const recoveryShare = 60
+
+func (c *conversation) recoveryOverflows(p *prepared) bool {
+	window := c.contextWindow
+	if c.actualContextWindow > 0 {
+		window = c.actualContextWindow
+	}
+	if window <= 0 || c.threadID == "" {
+		return false
+	}
+	inputs, err := transcriptInput(p.Messages)
+	if err != nil {
+		return false
+	}
+	return c.contextTokens()+estimateItems(inputs) > window*recoveryShare/100
+}
+
+// contextOverflow reports Codex failures caused by the native thread no longer
+// fitting the model's window, including failed remote compactions. Retrying the
+// same thread can never succeed.
+func contextOverflow(detail any) bool {
+	text := strings.ToLower(string(encode(detail)))
+	for _, marker := range []string{"ran out of room", "remote compact task", "your input exceeds", "context_length_exceeded", "maximum context length"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// overflowed fails the request as Claude's own "prompt is too long" so Claude
+// Code compacts instead of retrying a server error, and makes the next request
+// continue from the host transcript in a fresh native thread.
+func (c *conversation) overflowed(detail any) error {
+	c.overflow = true
+	c.resetHistory = true
+	_ = c.saveState()
+	return &bridgeError{400, "prompt is too long: Codex ran out of room in the model's context window (" + strings.TrimSpace(fallback(str(object(detail)["message"]), string(encode(detail)))) + "). The next request continues in a fresh Codex thread; run /compact if it persists."}
+}

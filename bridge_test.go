@@ -70,6 +70,7 @@ type fakeRPC struct {
 	rateLimited            bool
 	reasoning              bool
 	commentary             bool
+	overflow               int
 }
 
 // Like Codex, a thread's history keeps every additional-context key it
@@ -146,6 +147,11 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 func (f *fakeRPC) finishLocked() {
 	if f.rateLimited {
 		f.events <- M{"method": "error", "params": M{"willRetry": true, "error": M{"message": "stream disconnected - retrying sampling request (1/5 in 198s)...", "codexErrorInfo": M{"responseStreamDisconnected": M{"httpStatusCode": 429}}}}}
+		return
+	}
+	if f.overflow > 0 {
+		f.overflow--
+		f.events <- M{"method": "error", "params": M{"willRetry": false, "error": M{"message": "Error running remote compact task: Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."}}}
 		return
 	}
 	if f.fail {
@@ -603,5 +609,57 @@ func BenchmarkPrepareLargeHistory(b *testing.B) {
 		if _, e := prepare(body, "gpt-test-sol", nil); e != nil {
 			b.Fatal(e)
 		}
+	}
+}
+
+func TestContextOverflowContinuesInFreshThread(t *testing.T) {
+	f := persistentFixture(t, t.TempDir())
+	body := testRequest(false)
+	body["metadata"] = M{"user_id": "overflowing"}
+	status, response := f.post(t, body)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	old := f.b.sessions[0].threadID
+	f.rpc().mu.Lock()
+	f.rpc().overflow = 1
+	f.rpc().mu.Unlock()
+	body = continueRequest(body, response, "Continue")
+	status, raw := f.fetch(t, "POST", "/v1/messages", body, "test-local-secret-123456789")
+	if status != 400 || !bytes.Contains(raw, []byte("prompt is too long")) || !bytes.Contains(raw, []byte("invalid_request_error")) {
+		t.Fatal(status, string(raw))
+	}
+	status, response = f.post(t, body)
+	if status != 200 {
+		t.Fatal(status, response)
+	}
+	calls, _ := f.rpc().snapshot()
+	var methods []string
+	for _, c := range calls {
+		methods = append(methods, c.Method)
+	}
+	if strings.Join(methods, ",") != "thread/resume,thread/start,turn/start" || calls[0].Params["threadId"] != old {
+		t.Fatal(methods)
+	}
+	if text := str(object(array(calls[2].Params["input"])[0])["text"]); !strings.Contains(text, "continues the SAME conversation") {
+		t.Fatal(text)
+	}
+	if f.b.sessions[0].threadID == old {
+		t.Fatal("kept the overflowed thread")
+	}
+	if !contextOverflow(M{"message": "Your input exceeds the context window of this model"}) || contextOverflow(M{"message": "quota exceeded"}) {
+		t.Fatal("overflow markers")
+	}
+}
+
+func TestRecoveryThatWouldFillTheWindowStartsFresh(t *testing.T) {
+	p := &prepared{Messages: []any{M{"role": "user", "content": []any{M{"type": "text", "text": strings.Repeat("palabra ", 400)}}}}}
+	c := &conversation{contextWindow: 1000, threadID: "native", usage: M{"input_tokens": 100, "output_tokens": 0}}
+	if !c.recoveryOverflows(p) {
+		t.Fatal("did not split a recovery that fills the window")
+	}
+	p.Messages = []any{M{"role": "user", "content": []any{M{"type": "text", "text": "short summary"}}}}
+	if c.recoveryOverflows(p) {
+		t.Fatal("split a small recovery")
 	}
 }

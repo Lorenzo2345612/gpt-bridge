@@ -56,6 +56,7 @@ type conversation struct {
 	toolOutputTokenLimit          int
 	cwd                           string
 	freshThread                   bool
+	overflow                      bool
 	lineage                       []responseLineage
 	retentionDays                 int
 	claudeSessionID               string
@@ -129,7 +130,8 @@ func openConversation(ctx context.Context, rpc backend, p *prepared, cwd, key st
 		}
 		c.recoveredPending = saved.Pending
 		c.usage = M{"input_tokens": saved.ContextTokens, "output_tokens": 0}
-		c.resetHistory = !prefixMatches(p.Hashes, c.expected)
+		c.resetHistory = !prefixMatches(p.Hashes, c.expected) || saved.Overflow
+		c.overflow = saved.Overflow
 	}
 	if !c.search {
 		c.updateHost(p)
@@ -144,7 +146,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		if err := c.interruptForCompaction(ctx); err != nil {
 			return err
 		}
-		if p.CompactHash != "" && p.CompactHash != c.compactHash {
+		if c.overflow || (p.CompactHash != "" && p.CompactHash != c.compactHash) || c.recoveryOverflows(p) {
 			if err := c.restartNative(ctx, p); err != nil {
 				return err
 			}
@@ -276,6 +278,7 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 		c.model = p.Model
 		c.resetHistory = false
 		c.freshThread = false
+		c.overflow = false
 		c.compactHash = p.CompactHash
 		c.recoveredPending = nil
 		c.contextSent()
@@ -454,6 +457,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 					if detail == nil {
 						detail = turn["status"]
 					}
+					if contextOverflow(detail) {
+						return c.overflowed(detail)
+					}
 					return upstream("Codex turn failed: %s", encode(detail))
 				}
 				if c.search && !searched {
@@ -464,6 +470,9 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 			case "error":
 				message := fallback(str(object(p["error"])["message"]), "upstream error")
 				if !boolean(p["willRetry"]) {
+					if contextOverflow(p["error"]) {
+						return c.overflowed(p["error"])
+					}
 					return upstream("Codex: %s", message)
 				}
 				// Codex silently sleeps for the server's Retry-After (often minutes)
