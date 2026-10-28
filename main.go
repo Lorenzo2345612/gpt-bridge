@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.19"
+const bridgeVersion = "0.6.20"
 
 type options struct {
 	serve, check, models, version      bool
@@ -31,7 +31,7 @@ type options struct {
 }
 
 func parseOptions(args []string) (options, error) {
-	o := options{timeout: 300, maxSessions: 0, idleTimeout: 120, model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
+	o := options{timeout: 300, maxSessions: 0, idleTimeout: envInt("CLAUDE_CODEX_IDLE_TIMEOUT", 300), model: os.Getenv("CLAUDE_CODEX_MODEL"), effort: os.Getenv("CLAUDE_CODEX_EFFORT")}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {

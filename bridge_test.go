@@ -68,6 +68,7 @@ type fakeRPC struct {
 	closed                 bool
 	fail                   bool
 	rateLimited            bool
+	reasoning              bool
 }
 
 // Like Codex, a thread's history keeps every additional-context key it
@@ -149,6 +150,9 @@ func (f *fakeRPC) finishLocked() {
 	if f.fail {
 		f.events <- M{"method": "error", "params": M{"willRetry": false, "error": M{"message": "quota exceeded"}}}
 		return
+	}
+	if f.reasoning {
+		f.events <- M{"method": "item/reasoning/summaryTextDelta", "params": M{"itemId": "r1", "summaryIndex": 0, "delta": "Revisando el código"}}
 	}
 	f.events <- M{"method": "item/agentMessage/delta", "params": M{"itemId": "answer", "delta": "¡Hecho!"}}
 	f.events <- M{"method": "item/completed", "params": M{"item": M{"type": "agentMessage", "id": "answer", "text": "¡Hecho!"}}}

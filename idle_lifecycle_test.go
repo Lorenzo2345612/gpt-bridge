@@ -182,7 +182,7 @@ func TestIdleTimeoutOptions(t *testing.T) {
 		t.Fatal("negative timeout accepted")
 	}
 	o, err := parseOptions(nil)
-	if err != nil || o.idleTimeout != 120 {
+	if err != nil || o.idleTimeout != 300 {
 		t.Fatal("unexpected default idle timeout", o, err)
 	}
 }

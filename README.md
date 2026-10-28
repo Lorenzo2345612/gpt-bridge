@@ -578,7 +578,7 @@ El puente exige autenticación ChatGPT y rechaza cuentas autenticadas con API ke
   un máximo por lanzador; `0` desactiva ese máximo. Los límites de la cuenta
   de Codex y los recursos del equipo siguen aplicándose;
   los ejecutores inactivos con checkpoint recuperable se descargan después
-  de 120 segundos (`--idle-timeout`). El hilo persistente conserva su ID al
+  de 300 segundos (`--idle-timeout` o `CLAUDE_CODEX_IDLE_TIMEOUT`). El hilo persistente conserva su ID al
   reanudar. Reiniciar no borra sesiones de Claude.
 
 ## Verificación manual

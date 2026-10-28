@@ -263,6 +263,9 @@ func (c *conversation) advance(ctx context.Context, p *prepared) error {
 	if c.effort != "" {
 		params["effort"] = c.effort
 	}
+	// Ask for reasoning summaries so Claude Code shows progress while the
+	// model thinks instead of an apparently idle spinner.
+	params["summary"] = "auto"
 	_, e = c.rpc.Call(ctx, "turn/start", params)
 	if e == nil {
 		c.addUnmeasured(appended)
@@ -281,6 +284,7 @@ type emitFunc func(string, any) error
 
 func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 	texts := map[string]string{}
+	reasoned := map[string]bool{}
 	searched := false
 	ping := time.NewTicker(5 * time.Second)
 	defer ping.Stop()
@@ -352,6 +356,19 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				continue
 			}
 			switch method {
+			case "item/reasoning/summaryTextDelta":
+				// Separate summary parts the way Codex renders them.
+				key := str(p["itemId"]) + "/" + fmt.Sprint(p["summaryIndex"])
+				delta := str(p["delta"])
+				if delta != "" && !reasoned[key] {
+					if len(reasoned) > 0 {
+						delta = "\n\n" + delta
+					}
+					reasoned[key] = true
+				}
+				if e := emit("thinking", delta); e != nil {
+					return e
+				}
 			case "item/agentMessage/delta":
 				id := str(p["itemId"])
 				delta := str(p["delta"])
@@ -454,7 +471,7 @@ func newBridge(command []string, cwd, model string, catalog []M, aliases map[str
 	for _, m := range catalog {
 		known[str(m["model"])] = m
 	}
-	return &Bridge{command: command, cwd: cwd, model: model, catalog: catalog, aliases: aliases, known: known, timeout: timeout, idleTimeout: 2 * time.Minute, maxSessions: maxSessions, contextWindow: window, effort: effort, factory: newRPC, retiring: map[string]chan struct{}{}}
+	return &Bridge{command: command, cwd: cwd, model: model, catalog: catalog, aliases: aliases, known: known, timeout: timeout, idleTimeout: 5 * time.Minute, maxSessions: maxSessions, contextWindow: window, effort: effort, factory: newRPC, retiring: map[string]chan struct{}{}}
 }
 func prefixMatches(hashes, expected []string) bool {
 	if len(expected) == 0 || len(hashes) < len(expected) {

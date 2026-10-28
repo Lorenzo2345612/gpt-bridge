@@ -53,8 +53,11 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	streaming := false
+	metric := requestMetric{start: time.Now()}
+	defer func() { h.bridge.recordMetric(metric) }()
 	fail := func(err error) {
 		status := errorStatus(err)
+		metric.Status = status
 		if os.Getenv("CLAUDE_CODEX_TRACE") == "1" {
 			fmt.Fprintf(os.Stderr, "gpt-bridge: event=error status=%d error=%q\n", status, err.Error())
 		}
@@ -123,11 +126,17 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.bridge.discard(c)
 			}
 		}()
+		metric.FreshThread = c.freshThread || c.threadID == ""
 		if e = c.advance(ctx, p); e != nil {
 			fail(e)
 			return
 		}
+		metric.Thread = c.threadID
+		metric.SetupMS = time.Since(metric.start).Milliseconds()
 	}
+	metric.Model = p.Model
+	metric.Replay = cached != nil
+	wantThinking := str(object(body["thinking"])["type"]) != "" && str(object(body["thinking"])["type"]) != "disabled"
 	response := M{"id": uid("msg_"), "type": "message", "role": "assistant", "model": p.Model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": M{"input_tokens": 0, "output_tokens": 0}}
 	if cached != nil {
 		var old M
@@ -149,11 +158,11 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	content := []any{}
-	textIndex := -1
+	openIndex, openKind := -1, ""
 	closeText := func() error {
-		if textIndex >= 0 {
-			index := textIndex
-			textIndex = -1
+		if openIndex >= 0 {
+			index := openIndex
+			openIndex, openKind = -1, ""
 			if streaming {
 				return writeSSE(w, "content_block_stop", M{"type": "content_block_stop", "index": index})
 			}
@@ -161,38 +170,63 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 	emit := func(kind string, value any) error {
+		if kind != "ping" && metric.firstOutput.IsZero() {
+			metric.firstOutput = time.Now()
+			metric.FirstOutputMS = metric.firstOutput.Sub(metric.start).Milliseconds()
+		}
 		switch kind {
 		case "ping":
 			if streaming {
 				return writeSSE(w, "ping", M{"type": "ping"})
 			}
-		case "text":
+		case "text", "thinking":
 			delta := str(value)
-			if delta == "" {
+			if delta == "" || (kind == "thinking" && !wantThinking) {
 				return nil
 			}
-			if textIndex < 0 {
-				textIndex = len(content)
-				content = append(content, M{"type": "text", "text": ""})
+			if kind == "text" && metric.FirstTextMS == 0 {
+				metric.FirstTextMS = time.Since(metric.start).Milliseconds()
+			}
+			field, deltaType := "text", "text_delta"
+			if kind == "thinking" {
+				field, deltaType = "thinking", "thinking_delta"
+			}
+			if openKind != kind {
+				if e := closeText(); e != nil {
+					return e
+				}
+				openIndex, openKind = len(content), kind
+				start := M{"type": kind, field: ""}
+				if kind == "thinking" {
+					// Codex reasoning summaries carry no Anthropic signature; history
+					// parsing drops thinking blocks, so it is never sent back upstream.
+					start["signature"] = ""
+				}
+				content = append(content, start)
 				if streaming {
-					if e := writeSSE(w, "content_block_start", M{"type": "content_block_start", "index": textIndex, "content_block": M{"type": "text", "text": ""}}); e != nil {
+					if e := writeSSE(w, "content_block_start", M{"type": "content_block_start", "index": openIndex, "content_block": copyMap(start)}); e != nil {
 						return e
 					}
 				}
 			}
-			block := object(content[textIndex])
-			block["text"] = str(block["text"]) + delta
+			block := object(content[openIndex])
+			block[field] = str(block[field]) + delta
 			if streaming {
-				return writeSSE(w, "content_block_delta", M{"type": "content_block_delta", "index": textIndex, "delta": M{"type": "text_delta", "text": delta}})
+				return writeSSE(w, "content_block_delta", M{"type": "content_block_delta", "index": openIndex, "delta": M{"type": deltaType, field: delta}})
 			}
 		case "tool", "done":
 			if e := closeText(); e != nil {
 				return e
 			}
 			v := object(value)
+			if kind == "tool" {
+				metric.Tools++
+			}
 			if kind == "done" {
 				response["stop_reason"] = v["reason"]
 				response["usage"] = v["usage"]
+				metric.Stop = str(v["reason"])
+				metric.Usage = object(v["usage"])
 				return nil
 			}
 			index := len(content)
@@ -220,6 +254,8 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				b := object(v)
 				if b["type"] == "text" {
 					e = emit("text", b["text"])
+				} else if b["type"] == "thinking" {
+					e = emit("thinking", b["thinking"])
 				} else {
 					e = emit("tool", b)
 				}
