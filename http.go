@@ -62,6 +62,9 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if status >= 500 {
 			kind = "api_error"
 		}
+		if status == 429 {
+			kind = "rate_limit_error"
+		}
 		message := err.Error()
 		if _, ok := err.(*bridgeError); !ok {
 			message = "Invalid request or local runtime error"

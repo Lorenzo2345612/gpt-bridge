@@ -54,6 +54,8 @@ type conversation struct {
 	cwd                           string
 	freshThread                   bool
 	lineage                       []responseLineage
+	retentionDays                 int
+	claudeSessionID               string
 }
 
 func newConversation(ctx context.Context, rpc backend, p *prepared, cwd, key string) (*conversation, error) {
@@ -405,8 +407,14 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				c.turnEnded()
 				return emit("done", M{"reason": "end_turn", "usage": c.reportedUsage()})
 			case "error":
+				message := fallback(str(object(p["error"])["message"]), "upstream error")
 				if !boolean(p["willRetry"]) {
-					return upstream("Codex: %s", fallback(str(object(p["error"])["message"]), "upstream error"))
+					return upstream("Codex: %s", message)
+				}
+				// Codex silently sleeps for the server's Retry-After (often minutes)
+				// on rate limits; surface it so Claude Code doesn't spin with no output.
+				if rateLimited(p["error"]) {
+					return &bridgeError{429, "Codex rate limited (429 Too Many Requests): " + message}
 				}
 			}
 		}
@@ -435,6 +443,7 @@ type Bridge struct {
 	cacheBytes                 int
 	factory                    backendFactory
 	stateDir                   string
+	retentionDays              int
 	retiring                   map[string]chan struct{}
 	retireWG                   sync.WaitGroup
 	closed                     bool
@@ -515,6 +524,13 @@ func (b *Bridge) acquire(ctx context.Context, body M) (*conversation, *prepared,
 					if !cachedPendingCheckpointMatches(cached, p) {
 						continue
 					}
+				}
+			}
+			if cached.pendingState != "" {
+				if err := touchResponseOwner(cached.pendingState); os.IsNotExist(err) {
+					continue
+				} else if err != nil {
+					return nil, nil, "", nil, err
 				}
 			}
 			return nil, p, requestKey, cached.data, nil
@@ -890,6 +906,16 @@ func (b *Bridge) close() {
 	wg.Wait()
 	b.retireWG.Wait()
 }
+func rateLimited(detail any) bool {
+	text := strings.ToLower(string(encode(detail)))
+	for _, marker := range []string{"429", "too many requests", "usagelimitexceeded", "usage_limit", "rate limit"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func errorStatus(err error) int {
 	var e *bridgeError
 	if errors.As(err, &e) {

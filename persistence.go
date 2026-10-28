@@ -45,6 +45,14 @@ func (b *Bridge) replayResponse(p *prepared, key string) ([]byte, error) {
 		return nil, nil
 	}
 	dir := filepath.Join(b.stateDir, p.HostIdentity)
+	gate, err := tryStateLock(filepath.Join(dir, "index.lock"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, &bridgeError{409, "Another bridge is updating this Claude session; retry shortly"}
+	}
+	defer gate.Close()
 	states, err := readCheckpoints(dir, p.HostIdentity)
 	if err != nil {
 		return nil, err
@@ -72,10 +80,26 @@ func (b *Bridge) replayResponse(p *prepared, key string) ([]byte, error) {
 			}, p) {
 				continue
 			}
+			if err := writePrivateState(filepath.Join(dir, ".last-used"), encode(time.Now())); err != nil {
+				return nil, err
+			}
 			return raw, nil
 		}
 	}
 	return nil, nil
+}
+
+func touchResponseOwner(path string) error {
+	dir := filepath.Dir(path)
+	gate, err := tryStateLock(filepath.Join(dir, "index.lock"))
+	if err != nil {
+		return err
+	}
+	defer gate.Close()
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
+	return writePrivateState(filepath.Join(dir, ".last-used"), encode(time.Now()))
 }
 
 var safeReplyHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -122,20 +146,22 @@ type responseLineage struct {
 }
 
 type sessionCheckpoint struct {
-	Lineage        []responseLineage `json:"lineage,omitempty"`
-	Version        int               `json:"version"`
-	ThreadID       string            `json:"thread_id"`
-	HostIdentity   string            `json:"host_identity"`
-	Key            string            `json:"key"`
-	Expected       []string          `json:"expected"`
-	RequestHashes  []string          `json:"request_hashes,omitempty"`
-	InFlight       bool              `json:"in_flight"`
-	Pending        []savedPending    `json:"pending,omitempty"`
-	Primary        bool              `json:"primary"`
-	CompactHash    string            `json:"compact_hash,omitempty"`
-	BaseSystemHash string            `json:"base_system_hash"`
-	Model          string            `json:"model"`
-	ContextWindow  int               `json:"context_window"`
+	RetentionDays   int               `json:"retention_days,omitempty"`
+	ClaudeSessionID string            `json:"claude_session_id,omitempty"`
+	Lineage         []responseLineage `json:"lineage,omitempty"`
+	Version         int               `json:"version"`
+	ThreadID        string            `json:"thread_id"`
+	HostIdentity    string            `json:"host_identity"`
+	Key             string            `json:"key"`
+	Expected        []string          `json:"expected"`
+	RequestHashes   []string          `json:"request_hashes,omitempty"`
+	InFlight        bool              `json:"in_flight"`
+	Pending         []savedPending    `json:"pending,omitempty"`
+	Primary         bool              `json:"primary"`
+	CompactHash     string            `json:"compact_hash,omitempty"`
+	BaseSystemHash  string            `json:"base_system_hash"`
+	Model           string            `json:"model"`
+	ContextWindow   int               `json:"context_window"`
 	// Hashes of the additional-context values the native thread already holds,
 	// so a resumed executor sends only what changed. No prompt text.
 	Context map[string]string `json:"context,omitempty"`
@@ -227,7 +253,7 @@ func (c *conversation) saveState() error {
 	for _, p := range c.pending {
 		pending = append(pending, savedPending{PublicID: p.PublicID, Name: p.Name})
 	}
-	state := sessionCheckpoint{Lineage: c.lineage, Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
+	state := sessionCheckpoint{RetentionDays: c.retentionDays, ClaudeSessionID: c.claudeSessionID, Lineage: c.lineage, Version: 1, ThreadID: c.threadID, HostIdentity: c.hostIdentity, Key: c.key, Expected: c.expected, RequestHashes: c.requestHashes, InFlight: c.inFlight, Pending: pending, Primary: c.primary, CompactHash: c.compactHash, BaseSystemHash: c.baseSystemHash, Model: c.model, ContextWindow: c.contextWindow, Context: c.sentContext, ContextTokens: c.contextTokens(), UpdatedAt: time.Now()}
 	return writePrivateState(c.statePath, encode(state))
 }
 
@@ -421,6 +447,8 @@ func (b *Bridge) openPersistent(ctx context.Context, p *prepared, key string) (*
 		}
 		return nil, false, err
 	}
+	c.retentionDays = b.retentionDays
+	c.claudeSessionID = p.ClaudeSessionID
 	if selected != nil {
 		c.statePath = selected.path
 		c.lease = lease

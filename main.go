@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.18"
+const bridgeVersion = "0.6.19"
 
 type options struct {
 	serve, check, models, version      bool
@@ -295,6 +295,18 @@ func run(args []string) (exitCode int, runError error) {
 		}
 	}
 	defer b.close()
+	if days, err := claudeRetentionDays(cwd, opts.claudeArgs); err != nil {
+		fmt.Fprintf(os.Stderr, "gpt-bridge: retention cleanup skipped: %v\n", err)
+	} else {
+		b.retentionDays = days
+		// As in Claude Code, sweep once at startup. Leases protect sessions
+		// already owned by this bridge or another running process.
+		go func() {
+			if err := b.cleanupExpiredSessions(ctx, time.Now()); err != nil {
+				fmt.Fprintf(os.Stderr, "gpt-bridge: retention cleanup: %v\n", err)
+			}
+		}()
+	}
 	go b.janitor(ctx)
 	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", opts.port))
 	if e != nil {

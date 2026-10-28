@@ -95,14 +95,37 @@ Las respuestas confirmadas también se guardan en archivos privados dentro de
 reiniciar sin iniciar otra inferencia ni cambiar los IDs de herramientas. Estos
 archivos sí contienen la respuesta del modelo y los argumentos de herramientas;
 no contienen otra copia del request ni de los resultados de herramientas. Se
-conservan junto con la sesión, sin una política adicional de caducidad. El
-checkpoint confirma su digest mediante escritura atómica; un archivo huérfano no
+conservan junto con la sesión. El checkpoint confirma su digest mediante
+escritura atómica; un archivo huérfano no
 autoriza su reproducción. Si un recibo confirmado falta o está corrupto, el puente
 falla sin repetir silenciosamente la inferencia. Los checkpoints antiguos siguen
 siendo reanudables, pero no permiten reconstruir respuestas que nunca se guardaron.
 Los marcadores de requests en curso también se restauran antes de escribir al
 reabrir una conversación. Esto no garantiza reproducción de un stream parcial
 interrumpido antes de confirmar su respuesta.
+
+### Retención local
+
+El puente reutiliza `cleanupPeriodDays` de Claude Code: 30 días de inactividad
+por defecto, sin otra opción de TTL propia. Al iniciar, lee los archivos de
+configuración de usuario, proyecto y local, los overrides de `--settings` y el
+archivo administrado local. Respeta `--setting-sources`. Si no puede interpretar
+una fuente seleccionada o el valor no es un entero positivo, omite la limpieza.
+Esta lectura no consulta políticas administradas remotas ni perfiles MDM.
+
+El plazo efectivo se guarda con cada checkpoint para no aplicar la política de
+un proyecto a otro. Se actualiza al crear o reanudar la conversación; cambiar una
+configuración no modifica retroactivamente los checkpoints de otros proyectos.
+Los checkpoints antiguos sin política la adoptan al reanudarse y no se purgan
+por conjetura. Una pasada en segundo plano al iniciar elimina checkpoints y
+recibos de grupos completamente vencidos. Conserva los archivos de lock vacíos.
+
+Nunca purga un grupo con una rama reciente, un executor con lease, herramientas
+pendientes o un request en curso. La actividad reciente del journal principal de
+Claude y los reintentos servidos desde caché también impiden la caducidad. Primero
+elimina checkpoints y después sus recibos; un marcador durable permite terminar
+una limpieza interrumpida sin dejar referencias a respuestas borradas. No borra
+transcripciones de Claude ni rollouts nativos de Codex.
 
 ## Instalación y uso
 

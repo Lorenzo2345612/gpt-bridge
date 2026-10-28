@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -254,6 +255,22 @@ func claudeEnvironment(base map[string]string, token, url, model string, aliases
 	env["CLAUDE_CODE_SUBAGENT_MODEL"] = "inherit"
 	env["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"] = "0"
 	env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+	// A configured HTTP(S)_PROXY must never intercept the loopback bridge.
+	bypass := []string{}
+	for _, key := range []string{"NO_PROXY", "no_proxy"} {
+		for _, host := range strings.Split(env[key], ",") {
+			if host = strings.TrimSpace(host); host != "" && !slices.Contains(bypass, host) {
+				bypass = append(bypass, host)
+			}
+		}
+	}
+	for _, host := range []string{"127.0.0.1", "localhost"} {
+		if !slices.Contains(bypass, host) {
+			bypass = append(bypass, host)
+		}
+	}
+	env["NO_PROXY"] = strings.Join(bypass, ",")
+	env["no_proxy"] = env["NO_PROXY"]
 	if window > 0 {
 		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = fmt.Sprint(window)
 		env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"

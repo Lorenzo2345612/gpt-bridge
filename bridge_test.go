@@ -67,6 +67,7 @@ type fakeRPC struct {
 	toolsPerTurn, received int
 	closed                 bool
 	fail                   bool
+	rateLimited            bool
 }
 
 // Like Codex, a thread's history keeps every additional-context key it
@@ -141,6 +142,10 @@ func (f *fakeRPC) Call(ctx context.Context, method string, p M) (M, error) {
 	return M{}, nil
 }
 func (f *fakeRPC) finishLocked() {
+	if f.rateLimited {
+		f.events <- M{"method": "error", "params": M{"willRetry": true, "error": M{"message": "stream disconnected - retrying sampling request (1/5 in 198s)...", "codexErrorInfo": M{"responseStreamDisconnected": M{"httpStatusCode": 429}}}}}
+		return
+	}
 	if f.fail {
 		f.events <- M{"method": "error", "params": M{"willRetry": false, "error": M{"message": "quota exceeded"}}}
 		return
@@ -468,6 +473,29 @@ func TestStreamingSuccessAndError(t *testing.T) {
 				t.Fatal(string(raw))
 			}
 		})
+	}
+}
+func TestClaudeEnvironmentBypassesProxyForBridge(t *testing.T) {
+	env := claudeEnvironment(map[string]string{"HTTPS_PROXY": "http://proxy:8080", "no_proxy": "corp.local, localhost"}, "token", "url", "gpt-test-sol", nil, 0)
+	if env["NO_PROXY"] != "corp.local,localhost,127.0.0.1" || env["no_proxy"] != env["NO_PROXY"] || env["HTTPS_PROXY"] != "http://proxy:8080" {
+		t.Fatal(env["NO_PROXY"], env["no_proxy"])
+	}
+}
+func TestRetryingRateLimitSurfaced(t *testing.T) {
+	f := newHTTPFixture(t)
+	f.configure = func(r *fakeRPC) { r.rateLimited = true }
+	status, raw := f.fetch(t, "POST", "/v1/messages", testRequest(false), "test-local-secret-123456789")
+	if status != 429 || !bytes.Contains(raw, []byte("rate_limit_error")) {
+		t.Fatal(status, string(raw))
+	}
+	body := testRequest(false)
+	body["stream"] = true
+	status, raw = f.fetch(t, "POST", "/v1/messages", body, "test-local-secret-123456789")
+	if status != 200 || !bytes.Contains(raw, []byte("event: error")) || !bytes.Contains(raw, []byte("rate_limit_error")) {
+		t.Fatal(status, string(raw))
+	}
+	if rateLimited(M{"message": "reconnecting after stream reset"}) {
+		t.Fatal("Treated a transient disconnect as a rate limit")
 	}
 }
 func TestCatalogContextAndEnvironment(t *testing.T) {
