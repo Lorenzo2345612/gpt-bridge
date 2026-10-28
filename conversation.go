@@ -18,6 +18,9 @@ type pendingTool struct {
 	PublicID, TurnID, Name string
 }
 type conversation struct {
+	// Per-response upstream health, reported in request metrics.
+	retries               int
+	maxGap                time.Duration
 	mu                    sync.Mutex
 	closeOnce             sync.Once
 	rpc                   backend
@@ -285,6 +288,26 @@ type emitFunc func(string, any) error
 func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 	texts := map[string]string{}
 	reasoned := map[string]bool{}
+	// Codex tags mid-turn progress narration as commentary; route it apart
+	// from the answer and keep separate messages from running together.
+	phases := map[string]string{}
+	lastMessage := ""
+	message := func(id, delta string) error {
+		kind := "text"
+		if phases[id] == "commentary" {
+			kind = "commentary"
+		}
+		if delta == "" {
+			return nil
+		}
+		if lastMessage != "" && lastMessage != id {
+			delta = "\n\n" + delta
+		}
+		lastMessage = id
+		return emit(kind, delta)
+	}
+	c.retries, c.maxGap = 0, 0
+	lastEvent := time.Now()
 	searched := false
 	ping := time.NewTicker(5 * time.Second)
 	defer ping.Stop()
@@ -309,6 +332,10 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 			c.sampleEnded()
 			return emit("done", M{"reason": "tool_use", "usage": c.reportedUsage()})
 		case msg := <-c.rpc.Events():
+			if gap := time.Since(lastEvent); gap > c.maxGap {
+				c.maxGap = gap
+			}
+			lastEvent = time.Now()
 			method := str(msg["method"])
 			p := object(msg["params"])
 			if id, ok := msg["id"]; ok {
@@ -373,13 +400,21 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				id := str(p["itemId"])
 				delta := str(p["delta"])
 				texts[id] += delta
-				if delta != "" {
-					if e := emit("text", delta); e != nil {
-						return e
-					}
+				if e := message(id, delta); e != nil {
+					return e
 				}
 			case "thread/compacted":
 				c.sentContext = nil
+			case "item/started":
+				item := object(p["item"])
+				if item["type"] == "agentMessage" {
+					phases[str(item["id"])] = str(item["phase"])
+				}
+				if item["type"] == "contextCompaction" {
+					if e := emit("status", "Compactando el contexto en Codex…"); e != nil {
+						return e
+					}
+				}
 			case "item/completed":
 				item := object(p["item"])
 				if item["type"] == "contextCompaction" {
@@ -392,8 +427,11 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 					id := str(item["id"])
 					text := str(item["text"])
 					already := texts[id]
+					if _, known := phases[id]; !known {
+						phases[id] = str(item["phase"])
+					}
 					if strings.HasPrefix(text, already) && len(text) > len(already) {
-						if e := emit("text", text[len(already):]); e != nil {
+						if e := message(id, text[len(already):]); e != nil {
 							return e
 						}
 					}
@@ -432,6 +470,10 @@ func (c *conversation) events(ctx context.Context, emit emitFunc) error {
 				// on rate limits; surface it so Claude Code doesn't spin with no output.
 				if rateLimited(p["error"]) {
 					return &bridgeError{429, "Codex rate limited (429 Too Many Requests): " + message}
+				}
+				c.retries++
+				if e := emit("status", fmt.Sprintf("Reconectando con OpenAI (intento %d): %s", c.retries, message)); e != nil {
+					return e
 				}
 			}
 		}

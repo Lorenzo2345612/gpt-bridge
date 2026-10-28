@@ -20,14 +20,17 @@ type requestMetric struct {
 	FreshThread bool   `json:"fresh_thread,omitempty"`
 	Replay      bool   `json:"replay,omitempty"`
 	// SetupMS covers executor start, thread resume and turn start/steer.
-	SetupMS       int64  `json:"setup_ms"`
-	FirstOutputMS int64  `json:"first_output_ms"`
-	FirstTextMS   int64  `json:"first_text_ms,omitempty"`
-	DurationMS    int64  `json:"duration_ms"`
-	Tools         int    `json:"tools,omitempty"`
-	Stop          string `json:"stop,omitempty"`
-	Status        int    `json:"status,omitempty"`
-	Usage         M      `json:"usage,omitempty"`
+	SetupMS       int64 `json:"setup_ms"`
+	FirstOutputMS int64 `json:"first_output_ms"`
+	FirstTextMS   int64 `json:"first_text_ms,omitempty"`
+	DurationMS    int64 `json:"duration_ms"`
+	Tools         int   `json:"tools,omitempty"`
+	// Codex reconnects and the longest silence between upstream events.
+	Retries  int    `json:"retries,omitempty"`
+	MaxGapMS int64  `json:"max_gap_ms,omitempty"`
+	Stop     string `json:"stop,omitempty"`
+	Status   int    `json:"status,omitempty"`
+	Usage    M      `json:"usage,omitempty"`
 }
 
 var metricsMu sync.Mutex

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,39 @@ func TestReasoningStreamsAsThinkingAndMetricsRecorded(t *testing.T) {
 	logged, err := os.ReadFile(path)
 	if err != nil || !bytes.Contains(logged, []byte(`"first_output_ms"`)) || bytes.Contains(logged, []byte("Revisando")) {
 		t.Fatal(err, string(logged))
+	}
+}
+
+func TestCommentaryAndReconnectsAreProgress(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metrics.jsonl")
+	t.Setenv("CLAUDE_CODEX_METRICS_FILE", path)
+	for _, thinking := range []bool{true, false} {
+		f := newHTTPFixture(t)
+		f.configure = func(r *fakeRPC) { r.commentary = true }
+		body := testRequest(false)
+		if thinking {
+			body["thinking"] = M{"type": "adaptive"}
+		}
+		status, raw := f.fetch(t, "POST", "/v1/messages", body, "test-local-secret-123456789")
+		var response M
+		if status != 200 || decode(raw, &response) != nil {
+			t.Fatal(status, string(raw))
+		}
+		got := map[string]string{}
+		for _, v := range array(response["content"]) {
+			b := object(v)
+			got[str(b["type"])] += str(b["text"]) + str(b["thinking"])
+		}
+		if thinking {
+			if !strings.Contains(got["thinking"], "Estoy revisando") || !strings.Contains(got["thinking"], "Reconectando con OpenAI (intento 1)") || got["text"] != "Primera parte.\n\n¡Hecho!" {
+				t.Fatal(got)
+			}
+		} else if got["thinking"] != "" || got["text"] != "Estoy revisando\n\nPrimera parte.\n\n¡Hecho!" {
+			t.Fatalf("%q", got)
+		}
+	}
+	logged, _ := os.ReadFile(path)
+	if !bytes.Contains(logged, []byte(`"retries":1`)) {
+		t.Fatal(string(logged))
 	}
 }

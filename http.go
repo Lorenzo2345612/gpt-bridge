@@ -175,6 +175,20 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			metric.FirstOutputMS = metric.firstOutput.Sub(metric.start).Milliseconds()
 		}
 		switch kind {
+		case "commentary":
+			// Progress narration reads as thinking; without thinking it stays text.
+			kind = "text"
+			if wantThinking {
+				kind = "thinking"
+			}
+		case "status":
+			note := ""
+			if wantThinking {
+				note = "\n\n_" + str(value) + "_\n\n"
+			}
+			kind, value = "thinking", note
+		}
+		switch kind {
 		case "ping":
 			if streaming {
 				return writeSSE(w, "ping", M{"type": "ping"})
@@ -192,6 +206,10 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				field, deltaType = "thinking", "thinking_delta"
 			}
 			if openKind != kind {
+				// Separators belong between messages, never at the start of a block.
+				if delta = strings.TrimLeft(delta, "\n"); delta == "" {
+					return nil
+				}
 				if e := closeText(); e != nil {
 					return e
 				}
@@ -223,6 +241,9 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				metric.Tools++
 			}
 			if kind == "done" {
+				if c != nil {
+					metric.Retries, metric.MaxGapMS = c.retries, c.maxGap.Milliseconds()
+				}
 				response["stop_reason"] = v["reason"]
 				response["usage"] = v["usage"]
 				metric.Stop = str(v["reason"])
@@ -269,6 +290,9 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if e != nil {
+		if c != nil {
+			metric.Retries, metric.MaxGapMS = c.retries, c.maxGap.Milliseconds()
+		}
 		fail(e)
 		return
 	}
