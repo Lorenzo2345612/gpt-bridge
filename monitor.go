@@ -94,6 +94,7 @@ type monitorSnapshot struct {
 	Sources   []monitorSource     `json:"sources"`
 	Warnings  []string            `json:"warnings"`
 	Usage     monitorUsageSummary `json:"usage"`
+	Latency   monitorLatency      `json:"latency"`
 }
 
 type codexLogReader struct {
@@ -358,6 +359,7 @@ func (m *bridgeMonitor) refresh(ctx context.Context) {
 			s.Events = append(s.Events, e)
 		}
 	}
+	s.Latency = readLatency(metricsPath(), time.Now().Add(-24*time.Hour))
 	m.mu.Lock()
 	m.snapshot = encode(s)
 	m.mu.Unlock()

@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const bridgeVersion = "0.6.21"
+const bridgeVersion = "0.6.22"
 
 type options struct {
 	serve, check, models, version      bool
@@ -295,6 +295,9 @@ func run(args []string) (exitCode int, runError error) {
 		}
 	}
 	defer b.close()
+	if !opts.serve {
+		go ensureDashboard()
+	}
 	if days, err := claudeRetentionDays(cwd, opts.claudeArgs); err != nil {
 		fmt.Fprintf(os.Stderr, "gpt-bridge: retention cleanup skipped: %v\n", err)
 	} else {
